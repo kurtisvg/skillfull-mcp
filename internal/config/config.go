@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 )
 
 type TransportType string
@@ -51,7 +52,71 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 
+	if err := cfg.expandEnvVars(); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// envVarPattern matches ${VAR} references in config values.
+var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
+
+// expandString replaces all ${VAR} references with their environment variable
+// values. Returns an error if a referenced variable is not set.
+func expandString(s string) (string, error) {
+	var expandErr error
+	result := envVarPattern.ReplaceAllStringFunc(s, func(match string) string {
+		varName := envVarPattern.FindStringSubmatch(match)[1]
+		val, ok := os.LookupEnv(varName)
+		if !ok {
+			expandErr = fmt.Errorf("environment variable %q is not set", varName)
+			return match
+		}
+		return val
+	})
+	if expandErr != nil {
+		return "", expandErr
+	}
+	return result, nil
+}
+
+// expandStringMap expands env vars in all values of a map.
+func expandStringMap(m map[string]string) error {
+	for k, v := range m {
+		expanded, err := expandString(v)
+		if err != nil {
+			return err
+		}
+		m[k] = expanded
+	}
+	return nil
+}
+
+// expandEnvVars expands ${VAR} references across all string fields in the config.
+func (c *Config) expandEnvVars() error {
+	for name, srv := range c.MCPServers {
+		var err error
+		if srv.Command, err = expandString(srv.Command); err != nil {
+			return fmt.Errorf("server %q command: %w", name, err)
+		}
+		if srv.URL, err = expandString(srv.URL); err != nil {
+			return fmt.Errorf("server %q url: %w", name, err)
+		}
+		for i, arg := range srv.Args {
+			if srv.Args[i], err = expandString(arg); err != nil {
+				return fmt.Errorf("server %q args[%d]: %w", name, i, err)
+			}
+		}
+		if err := expandStringMap(srv.Env); err != nil {
+			return fmt.Errorf("server %q env: %w", name, err)
+		}
+		if err := expandStringMap(srv.Headers); err != nil {
+			return fmt.Errorf("server %q headers: %w", name, err)
+		}
+		c.MCPServers[name] = srv
+	}
+	return nil
 }
 
 func (c *Config) Validate() error {

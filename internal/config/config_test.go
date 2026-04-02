@@ -221,3 +221,87 @@ func TestLoadedFieldValues(t *testing.T) {
 		t.Errorf("api.TransportType() = %q, %v; want http", tt, err)
 	}
 }
+
+func TestEnvVarExpansion(t *testing.T) {
+	t.Setenv("TEST_CMD", "my-server")
+	t.Setenv("TEST_ARG", "--verbose")
+	t.Setenv("TEST_URL", "https://api.example.com")
+	t.Setenv("TEST_TOKEN", "secret123")
+	t.Setenv("TEST_ENV_VAL", "debug-mode")
+
+	json := `{
+		"mcpServers": {
+			"s1": {
+				"command": "${TEST_CMD}",
+				"args": ["${TEST_ARG}", "literal"],
+				"env": {"MODE": "${TEST_ENV_VAL}"}
+			},
+			"s2": {
+				"type": "http",
+				"url": "${TEST_URL}/mcp",
+				"headers": {"Authorization": "Bearer ${TEST_TOKEN}"}
+			}
+		}
+	}`
+	path := writeTestConfig(t, json)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s1 := cfg.MCPServers["s1"]
+	if s1.Command != "my-server" {
+		t.Errorf("command = %q, want 'my-server'", s1.Command)
+	}
+	if s1.Args[0] != "--verbose" {
+		t.Errorf("args[0] = %q, want '--verbose'", s1.Args[0])
+	}
+	if s1.Args[1] != "literal" {
+		t.Errorf("args[1] = %q, want 'literal'", s1.Args[1])
+	}
+	if s1.Env["MODE"] != "debug-mode" {
+		t.Errorf("env[MODE] = %q, want 'debug-mode'", s1.Env["MODE"])
+	}
+
+	s2 := cfg.MCPServers["s2"]
+	if s2.URL != "https://api.example.com/mcp" {
+		t.Errorf("url = %q, want 'https://api.example.com/mcp'", s2.URL)
+	}
+	if s2.Headers["Authorization"] != "Bearer secret123" {
+		t.Errorf("header = %q, want 'Bearer secret123'", s2.Headers["Authorization"])
+	}
+}
+
+func TestEnvVarExpansionMissingVar(t *testing.T) {
+	json := `{
+		"mcpServers": {
+			"s1": {
+				"type": "http",
+				"url": "${THIS_VAR_DOES_NOT_EXIST}/mcp"
+			}
+		}
+	}`
+	path := writeTestConfig(t, json)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for missing env var")
+	}
+}
+
+func TestEnvVarNoExpansionWithoutBraces(t *testing.T) {
+	json := `{
+		"mcpServers": {
+			"s1": {
+				"command": "$NOT_EXPANDED"
+			}
+		}
+	}`
+	path := writeTestConfig(t, json)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MCPServers["s1"].Command != "$NOT_EXPANDED" {
+		t.Errorf("bare $VAR should not expand, got %q", cfg.MCPServers["s1"].Command)
+	}
+}
