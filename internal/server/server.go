@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"skillful-mcp/internal/clientmanager"
@@ -39,7 +40,7 @@ func Serve(ctx context.Context, s *mcp.Server, transport, host, port string) err
 			<-ctx.Done()
 			srv.Close()
 		}()
-		fmt.Printf("Listening on %s\n", addr)
+		fmt.Fprintf(os.Stderr, "Listening on %s\n", addr)
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			return err
 		}

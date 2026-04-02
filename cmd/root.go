@@ -38,14 +38,14 @@ func Execute() {
 		log.Fatalf("Invalid config: %v", err)
 	}
 
-	fmt.Printf("Loaded %d server(s):\n", len(cfg.MCPServers))
+	fmt.Fprintf(os.Stderr, "Loaded %d server(s):\n", len(cfg.MCPServers))
 	for name, srv := range cfg.MCPServers {
 		tt, _ := srv.TransportType() // already validated
 		switch tt {
 		case config.TransportSTDIO:
-			fmt.Printf("  [%s] %s → %s %v\n", name, tt, srv.Command, srv.Args)
+			fmt.Fprintf(os.Stderr, "  [%s] %s → %s %v\n", name, tt, srv.Command, srv.Args)
 		case config.TransportHTTP, config.TransportSSE:
-			fmt.Printf("  [%s] %s → %s\n", name, tt, srv.URL)
+			fmt.Fprintf(os.Stderr, "  [%s] %s → %s\n", name, tt, srv.URL)
 		}
 	}
 
@@ -58,7 +58,7 @@ func Execute() {
 	}
 	defer mgr.Close()
 
-	fmt.Printf("Connected to %d skill(s): %v\n", len(mgr.ListServerNames()), mgr.ListServerNames())
+	fmt.Fprintf(os.Stderr, "Connected to %d skill(s): %v\n", len(mgr.ListServerNames()), mgr.ListServerNames())
 
 	s := server.NewServer(mgr)
 	if err := server.Serve(ctx, s, transport, host, port); err != nil {
