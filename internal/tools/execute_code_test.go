@@ -12,8 +12,8 @@ func TestExecuteCodeDescriptionRefersToUseSkill(t *testing.T) {
 	if !strings.Contains(executeCodeDescription, "use_skill") {
 		t.Error("description should refer to use_skill for tool discovery")
 	}
-	if !strings.Contains(executeCodeDescription, "call_tool") {
-		t.Error("description should mention call_tool function")
+	if !strings.Contains(executeCodeDescription, "tool_name") {
+		t.Error("description should show tools are called by name")
 	}
 	if !strings.Contains(executeCodeDescription, "resources") {
 		t.Error("description should mention resources")

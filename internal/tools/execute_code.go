@@ -12,15 +12,15 @@ import (
 )
 
 type executeCodeInput struct {
-	Code string `json:"code" jsonschema:"python code that orchestrates tool calls via call_tool(skill_name, tool_name, **kwargs) and returns a computed result"`
+	Code string `json:"code" jsonschema:"python code that calls downstream tools by name and returns a computed result"`
 }
 
 const executeCodeDescription = `Execute Python code in a secure sandbox to orchestrate multiple tool calls and return a computed result.
 
-The code has access to a built-in function:
-  call_tool(skill_name: str, tool_name: str, **kwargs) -> str
+All downstream tools are available as functions, called by name:
+  result = tool_name(arg1, arg2, key=value) -> str
 
-call_tool sends kwargs as the tool's input arguments and returns the text result.
+Positional and keyword arguments are both supported.
 
 IMPORTANT: Only call tools that were returned by use_skill or described in resources. Do not guess tool names or schemas — first call use_skill to discover the available tools and their input schemas for a given skill, then write code that calls those tools.`
 
@@ -42,10 +42,15 @@ func RegisterExecuteCode(s *mcp.Server, mgr *clientmanager.Manager) {
 			return result, nil, nil
 		}
 
+		fns, err := buildToolFunctions(ctx, mgr)
+		if err != nil {
+			result := &mcp.CallToolResult{}
+			result.SetError(err)
+			return result, nil, nil
+		}
+
 		value, err := runner.Run(ctx, monty.RunOptions{
-			Functions: map[string]monty.ExternalFunction{
-				"call_tool": makeCallToolFn(ctx, mgr),
-			},
+			Functions: fns,
 		})
 		if err != nil {
 			result := &mcp.CallToolResult{}
@@ -59,55 +64,102 @@ func RegisterExecuteCode(s *mcp.Server, mgr *clientmanager.Manager) {
 	})
 }
 
-// makeCallToolFn creates a Monty external function that proxies tool calls
-// to downstream MCP servers.
-//
-// Python signature: call_tool(skill_name: str, tool_name: str, **kwargs) -> str
-func makeCallToolFn(ctx context.Context, mgr *clientmanager.Manager) monty.ExternalFunction {
-	return func(_ context.Context, call monty.Call) (monty.Result, error) {
-		if len(call.Args) < 2 {
-			return monty.Return(monty.String("error: call_tool requires skill_name and tool_name as positional arguments")), nil
-		}
-
-		skillName, ok := call.Args[0].Raw().(string)
-		if !ok {
-			return monty.Return(monty.String("error: skill_name must be a string")), nil
-		}
-		toolName, ok := call.Args[1].Raw().(string)
-		if !ok {
-			return monty.Return(monty.String("error: tool_name must be a string")), nil
-		}
-
-		session, err := mgr.GetSession(skillName)
-		if err != nil {
-			return monty.Return(monty.String(fmt.Sprintf("error: %v", err))), nil
-		}
-
-		// Convert kwargs to tool arguments.
-		args := make(map[string]any)
-		for _, pair := range call.Kwargs {
-			key, ok := pair.Key.Raw().(string)
-			if !ok {
-				continue
-			}
-			args[key] = montyValueToAny(pair.Value)
-		}
-
-		result, err := session.CallTool(ctx, &mcp.CallToolParams{
-			Name:      toolName,
-			Arguments: args,
-		})
-		if err != nil {
-			return monty.Return(monty.String(fmt.Sprintf("error: %v", err))), nil
-		}
-
-		if result.IsError {
-			text := extractText(result)
-			return monty.Return(monty.String(fmt.Sprintf("error: %s", text))), nil
-		}
-
-		return monty.Return(monty.String(extractText(result))), nil
+// buildToolFunctions creates a Monty external function for each downstream tool,
+// using resolved names (prefixed only on conflict).
+func buildToolFunctions(ctx context.Context, mgr *clientmanager.Manager) (map[string]monty.ExternalFunction, error) {
+	resolved, err := ResolveToolNames(ctx, mgr)
+	if err != nil {
+		return nil, err
 	}
+
+	fns := make(map[string]monty.ExternalFunction, len(resolved))
+	for _, rt := range resolved {
+		rt := rt
+		session, err := mgr.GetSession(rt.SkillName)
+		if err != nil {
+			continue
+		}
+		paramNames := extractParamNames(rt.Tool.InputSchema)
+
+		fns[rt.ResolvedName] = func(_ context.Context, call monty.Call) (monty.Result, error) {
+			args := make(map[string]any)
+
+			// Map positional args to parameter names from the schema.
+			for i, val := range call.Args {
+				if i < len(paramNames) {
+					args[paramNames[i]] = montyValueToAny(val)
+				}
+			}
+
+			// Keyword args override positional.
+			for _, pair := range call.Kwargs {
+				key, ok := pair.Key.Raw().(string)
+				if !ok {
+					continue
+				}
+				args[key] = montyValueToAny(pair.Value)
+			}
+
+			toolResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+				Name:      rt.OriginalName,
+				Arguments: args,
+			})
+			if err != nil {
+				return monty.Return(monty.String(fmt.Sprintf("error: %v", err))), nil
+			}
+
+			if toolResult.IsError {
+				text := extractText(toolResult)
+				return monty.Return(monty.String(fmt.Sprintf("error: %s", text))), nil
+			}
+
+			return monty.Return(monty.String(extractText(toolResult))), nil
+		}
+	}
+
+	return fns, nil
+}
+
+// extractParamNames extracts ordered property names from a JSON Schema input schema.
+// The InputSchema from the client is typically a map[string]any.
+func extractParamNames(schema any) []string {
+	m, ok := schema.(map[string]any)
+	if !ok {
+		return nil
+	}
+	props, ok := m["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	// Check for explicit ordering via "required" array (common convention).
+	if required, ok := m["required"].([]any); ok {
+		names := make([]string, 0, len(required))
+		for _, r := range required {
+			if s, ok := r.(string); ok {
+				names = append(names, s)
+			}
+		}
+		// Append non-required properties.
+		for name := range props {
+			found := false
+			for _, n := range names {
+				if n == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				names = append(names, name)
+			}
+		}
+		return names
+	}
+	// No required field — just return property names.
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	return names
 }
 
 // montyValueToAny converts a Monty Value to a Go value suitable for JSON tool arguments.
@@ -137,7 +189,6 @@ func montyValueToAny(v monty.Value) any {
 		}
 		return list
 	default:
-		// Fall back to JSON marshaling the Value.
 		data, err := json.Marshal(v)
 		if err != nil {
 			return v.String()

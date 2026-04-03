@@ -44,7 +44,24 @@ The typical agent workflow is:
 
 1. Call `list_skills` to see what's available
 2. Call `use_skill` to inspect a skill's tools and their input schemas
-3. Use `execute_code` to orchestrate  tool calls in a single round-trip
+3. Use `execute_code` to orchestrate tool calls in a single round-trip
+
+### Code mode example
+
+After discovering tools via `use_skill`, the agent can call them directly by
+name inside `execute_code`:
+
+```python
+# Call tools from different skills in a single execution
+users = query(sql="SELECT name, email FROM users WHERE active = true")
+report = read_file(path="/templates/report.md")
+users + "\n\n" + report
+```
+
+All downstream tools are available as functions with positional and keyword
+arguments. If two skills define a tool with the same name, the function is
+prefixed with the skill name (e.g. `database_search`, `docs_search`). Tool
+names returned by `use_skill` always match the function names in `execute_code`.
 
 ## Configuration
 
