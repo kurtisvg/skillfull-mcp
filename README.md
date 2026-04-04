@@ -103,7 +103,19 @@ Create an `mcp.json` file with your downstream servers:
   "mcpServers": {
     "database": {
       "command": "npx",
-      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=postgres"]
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=postgres"],
+      "description": "Postgres database tools — query, inspect schemas, and manage tables. Use when the user needs to read or write data, explore table structures, or run SQL.",
+      "env": {
+        "TOOLBOX_POSTGRES_CONNSTRING": "${DATABASE_URL}"
+      }
+    },
+    "github-issues": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_TOKEN}"
+      },
+      "description": "GitHub issue management — create, search, update, and comment on issues. Use when the user mentions bugs, feature requests, or issue triage."
     }
   }
 }
@@ -180,7 +192,7 @@ massive server, split it into focused skills by feature group:
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
-      "description": "Create, search, and manage GitHub issues. Use when filing bugs, triaging issues, or adding comments to existing issues."
+      "description": "GitHub issue management — create, search, update, and comment on issues. Use when the user mentions bugs, feature requests, or issue triage."
     },
     "github-labels": {
       "type": "http",
@@ -188,7 +200,7 @@ massive server, split it into focused skills by feature group:
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
-      "description": "Create and manage issue labels. Use when categorizing issues, adding or removing labels, or organizing triage workflows."
+      "description": "GitHub label management — create, assign, and remove labels. Use when organizing or categorizing issues and pull requests."
     },
     "github-prs": {
       "type": "http",
@@ -196,7 +208,7 @@ massive server, split it into focused skills by feature group:
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
-      "description": "Review, merge, and manage pull requests. Use when reviewing code, checking PR status, or merging approved changes."
+      "description": "GitHub pull request workflows — review, merge, and manage PRs. Use when the user asks about code review, PR status, or merging changes."
     },
     "github-actions": {
       "type": "http",
@@ -204,7 +216,7 @@ massive server, split it into focused skills by feature group:
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
-      "description": "Trigger, monitor, and debug GitHub Actions workflows. Use when running CI, checking build status, or investigating failed workflows."
+      "description": "GitHub Actions CI/CD — trigger, monitor, and debug workflows. Use when the user asks about build status, failed checks, or re-running pipelines."
     }
   }
 }
@@ -248,7 +260,7 @@ are passed to the child — the parent environment is not inherited.
     "database": {
       "command": "npx",
       "args": ["-y", "@toolbox-sdk/server", "--prebuilt=postgres"],
-      "description": "Various tools for interacting with Postgres databases",
+      "description": "Postgres database tools — query, inspect schemas, and manage tables. Use when the user needs to read or write data, explore table structures, or run SQL.",
       "env": {
         "TOOLBOX_POSTGRES_CONNSTRING": "${DATABASE_URL}"
       }
