@@ -12,12 +12,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// startDownstream creates a fake MCP server with the given tools and resources,
-// and returns a connected client session.
-func startDownstream(t *testing.T, ctx context.Context, tools []mcp.Tool, resources []mcp.Resource) *mcp.ClientSession {
+// startFakeServer creates a fake MCP server with the given instructions, tools,
+// and resources, and returns a connected client session.
+func startFakeServer(t *testing.T, ctx context.Context, instructions string, tools []mcp.Tool, resources []mcp.Resource) *mcp.ClientSession {
 	t.Helper()
 
-	s := mcp.NewServer(&mcp.Implementation{Name: "downstream"}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "downstream"}, &mcp.ServerOptions{
+		Instructions: instructions,
+	})
 	for _, tool := range tools {
 		tool := tool
 		mcp.AddTool(s, &tool, func(ctx context.Context, req *mcp.CallToolRequest, input map[string]any) (*mcp.CallToolResult, any, error) {
@@ -72,14 +74,14 @@ func TestE2EMultipleSkills(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	dbSession := startDownstream(t, ctx,
+	dbSession := startFakeServer(t, ctx, "Query and inspect a SQL database",
 		[]mcp.Tool{
 			{Name: "execute_sql", Description: "Run a SQL query"},
 			{Name: "list_tables", Description: "List database tables"},
 		},
 		nil,
 	)
-	fsSession := startDownstream(t, ctx,
+	fsSession := startFakeServer(t, ctx, "Read files from the local filesystem",
 		[]mcp.Tool{
 			{Name: "read_file", Description: "Read a file"},
 		},
@@ -87,10 +89,16 @@ func TestE2EMultipleSkills(t *testing.T) {
 			{URI: "file:///tmp/test.txt", Name: "test.txt", Description: "A test file"},
 		},
 	)
+	// Skill with no instructions.
+	plainSession := startFakeServer(t, ctx, "",
+		[]mcp.Tool{{Name: "ping", Description: "Ping"}},
+		nil,
+	)
 
 	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
 		"database":   mcpserver.NewServerFromSession(dbSession),
 		"filesystem": mcpserver.NewServerFromSession(fsSession),
+		"plain":      mcpserver.NewServerFromSession(plainSession),
 	})
 	defer mgr.Close()
 
@@ -102,16 +110,14 @@ func TestE2EMultipleSkills(t *testing.T) {
 			t.Fatal(err)
 		}
 		tc := result.Content[0].(*mcp.TextContent)
-		var names []string
-		if err := json.Unmarshal([]byte(tc.Text), &names); err != nil {
-			t.Fatal(err)
+		if !strings.Contains(tc.Text, "- database: Query and inspect a SQL database") {
+			t.Errorf("expected database with instructions, got %q", tc.Text)
 		}
-		nameSet := map[string]bool{}
-		for _, n := range names {
-			nameSet[n] = true
+		if !strings.Contains(tc.Text, "- filesystem: Read files from the local filesystem") {
+			t.Errorf("expected filesystem with instructions, got %q", tc.Text)
 		}
-		if len(names) != 2 || !nameSet["database"] || !nameSet["filesystem"] {
-			t.Errorf("expected [database, filesystem], got %v", names)
+		if !strings.Contains(tc.Text, "- plain\n") && !strings.HasSuffix(tc.Text, "- plain") {
+			t.Errorf("expected '- plain' without instructions, got %q", tc.Text)
 		}
 	})
 
@@ -294,7 +300,9 @@ func TestE2EPositionalArgs(t *testing.T) {
 	type QueryInput struct {
 		SQL string `json:"sql" jsonschema:"the SQL query"`
 	}
-	ds := mcp.NewServer(&mcp.Implementation{Name: "typed-downstream"}, nil)
+	ds := mcp.NewServer(&mcp.Implementation{Name: "typed-downstream"}, &mcp.ServerOptions{
+		Instructions: "Run SQL queries with typed parameters",
+	})
 	mcp.AddTool(ds, &mcp.Tool{Name: "execute_sql", Description: "Run a SQL query"}, func(ctx context.Context, req *mcp.CallToolRequest, input QueryInput) (*mcp.CallToolResult, any, error) {
 		resp := map[string]any{"tool": "execute_sql", "sql": input.SQL}
 		data, _ := json.Marshal(resp)
@@ -366,14 +374,14 @@ func TestE2EToolNameConflict(t *testing.T) {
 	ctx := t.Context()
 
 	// Both skills have a tool named "search", plus alpha has "unique_tool".
-	alpha := startDownstream(t, ctx,
+	alpha := startFakeServer(t, ctx, "Alpha search service",
 		[]mcp.Tool{
 			{Name: "search", Description: "Search alpha"},
 			{Name: "unique_tool", Description: "Only in alpha"},
 		},
 		nil,
 	)
-	beta := startDownstream(t, ctx,
+	beta := startFakeServer(t, ctx, "Beta search service",
 		[]mcp.Tool{{Name: "search", Description: "Search beta"}},
 		nil,
 	)

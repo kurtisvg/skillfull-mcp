@@ -14,7 +14,8 @@ import (
 
 // Server wraps a connected MCP client session to a downstream server.
 type Server struct {
-	session *mcp.ClientSession
+	session      *mcp.ClientSession
+	instructions string
 }
 
 // NewServer connects to a downstream MCP server and returns a Server.
@@ -44,7 +45,11 @@ func NewServer(ctx context.Context, srv config.Server) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{session: session}, nil
+	s := &Server{session: session}
+	if res := session.InitializeResult(); res != nil {
+		s.instructions = res.Instructions
+	}
+	return s, nil
 }
 
 func (s *Server) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
@@ -63,13 +68,23 @@ func (s *Server) ReadResource(ctx context.Context, params *mcp.ReadResourceParam
 	return s.session.ReadResource(ctx, params)
 }
 
+func (s *Server) Instructions() string {
+	return s.instructions
+}
+
 func (s *Server) Close() error {
 	return s.session.Close()
 }
 
 // NewServerFromSession creates a Server from a pre-built session (useful for testing).
 func NewServerFromSession(session *mcp.ClientSession) *Server {
-	return &Server{session: session}
+	s := &Server{session: session}
+	if session != nil {
+		if res := session.InitializeResult(); res != nil {
+			s.instructions = res.Instructions
+		}
+	}
+	return s
 }
 
 // toEnv converts the configured env map to a slice for exec.Cmd.

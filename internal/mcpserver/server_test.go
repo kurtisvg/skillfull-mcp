@@ -9,10 +9,14 @@ import (
 
 // startFakeServer creates an in-memory MCP server with one registered tool,
 // connects a client to it, and returns the client session.
-func startFakeServer(t *testing.T, ctx context.Context, toolName string) *mcp.ClientSession {
+func startFakeServer(t *testing.T, ctx context.Context, toolName string, opts ...*mcp.ServerOptions) *mcp.ClientSession {
 	t.Helper()
 
-	srv := mcp.NewServer(&mcp.Implementation{Name: "fake-server"}, nil)
+	var serverOpts *mcp.ServerOptions
+	if len(opts) > 0 {
+		serverOpts = opts[0]
+	}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "fake-server"}, serverOpts)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolName,
 		Description: "A test tool",
@@ -134,4 +138,33 @@ func TestServerReadResource(t *testing.T) {
 	if len(result.Contents) != 1 || result.Contents[0].Text != "hello" {
 		t.Errorf("expected 'hello', got %v", result.Contents)
 	}
+}
+
+func TestServerInstructions(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	t.Run("with instructions", func(t *testing.T) {
+		t.Parallel()
+		session := startFakeServer(t, ctx, "tool", &mcp.ServerOptions{
+			Instructions: "Use this server for testing",
+		})
+		s := NewServerFromSession(session)
+		defer s.Close()
+
+		if s.Instructions() != "Use this server for testing" {
+			t.Errorf("Instructions() = %q, want %q", s.Instructions(), "Use this server for testing")
+		}
+	})
+
+	t.Run("without instructions", func(t *testing.T) {
+		t.Parallel()
+		session := startFakeServer(t, ctx, "tool")
+		s := NewServerFromSession(session)
+		defer s.Close()
+
+		if s.Instructions() != "" {
+			t.Errorf("Instructions() = %q, want empty", s.Instructions())
+		}
+	})
 }
