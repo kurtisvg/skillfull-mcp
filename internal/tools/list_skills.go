@@ -4,14 +4,14 @@ import (
 	"context"
 	"encoding/json"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type listSkillsInput struct{}
 
-func RegisterListSkills(s *mcp.Server, mgr *clientmanager.Manager) {
+func RegisterListSkills(s *mcp.Server, mgr *mcpserver.Manager) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_skills",
 		Description: "List all available skill names",

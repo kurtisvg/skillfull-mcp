@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -13,12 +13,12 @@ type readResourceInput struct {
 	ResourceURI string `json:"resource_uri" jsonschema:"URI of the resource to read"`
 }
 
-func RegisterReadResource(s *mcp.Server, mgr *clientmanager.Manager) {
+func RegisterReadResource(s *mcp.Server, mgr *mcpserver.Manager) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "read_resource",
 		Description: "Read a resource from a specific skill",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input readResourceInput) (*mcp.CallToolResult, any, error) {
-		session, err := mgr.GetSession(input.SkillName)
+		session, err := mgr.GetServer(input.SkillName)
 		if err != nil {
 			result := &mcp.CallToolResult{}
 			result.SetError(err)

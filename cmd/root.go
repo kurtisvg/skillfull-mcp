@@ -8,8 +8,8 @@ import (
 	"os"
 	"os/signal"
 
-	"skillful-mcp/internal/clientmanager"
 	"skillful-mcp/internal/config"
+	"skillful-mcp/internal/mcpserver"
 	"skillful-mcp/internal/server"
 )
 
@@ -52,7 +52,7 @@ func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	mgr, err := clientmanager.ConnectAll(ctx, cfg)
+	mgr, err := mcpserver.NewManager(ctx, cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to servers: %v", err)
 	}

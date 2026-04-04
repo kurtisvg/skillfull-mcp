@@ -3,16 +3,14 @@ package tools
 import (
 	"testing"
 
-	"skillful-mcp/internal/clientmanager"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"skillful-mcp/internal/mcpserver"
 )
 
 func TestListServerNamesSorted(t *testing.T) {
-	mgr := clientmanager.NewFromSessions(map[string]*mcp.ClientSession{
-		"charlie": nil,
-		"alpha":   nil,
-		"bravo":   nil,
+	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
+		"charlie": mcpserver.NewServerFromSession(nil),
+		"alpha":   mcpserver.NewServerFromSession(nil),
+		"bravo":   mcpserver.NewServerFromSession(nil),
 	})
 
 	names := mgr.ListServerNames()
@@ -28,7 +26,7 @@ func TestListServerNamesSorted(t *testing.T) {
 }
 
 func TestListServerNamesEmpty(t *testing.T) {
-	mgr := clientmanager.NewFromSessions(map[string]*mcp.ClientSession{})
+	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{})
 	names := mgr.ListServerNames()
 	if len(names) != 0 {
 		t.Errorf("expected empty, got %v", names)

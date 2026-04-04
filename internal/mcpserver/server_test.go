@@ -1,0 +1,137 @@
+package mcpserver
+
+import (
+	"context"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// startFakeServer creates an in-memory MCP server with one registered tool,
+// connects a client to it, and returns the client session.
+func startFakeServer(t *testing.T, ctx context.Context, toolName string) *mcp.ClientSession {
+	t.Helper()
+
+	srv := mcp.NewServer(&mcp.Implementation{Name: "fake-server"}, nil)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        toolName,
+		Description: "A test tool",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "ok"}},
+		}, nil, nil
+	})
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	go func() { _ = srv.Run(ctx, serverTransport) }()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("failed to connect test client: %v", err)
+	}
+	return session
+}
+
+func TestServerListTools(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	s := NewServerFromSession(startFakeServer(t, ctx, "my_test_tool"))
+	defer s.Close()
+
+	result, err := s.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools error: %v", err)
+	}
+	if len(result.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(result.Tools))
+	}
+	if result.Tools[0].Name != "my_test_tool" {
+		t.Errorf("tool name = %q, want %q", result.Tools[0].Name, "my_test_tool")
+	}
+}
+
+func TestServerCallTool(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	s := NewServerFromSession(startFakeServer(t, ctx, "echo"))
+	defer s.Close()
+
+	result, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "echo"})
+	if err != nil {
+		t.Fatalf("CallTool error: %v", err)
+	}
+	tc, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatal("expected TextContent")
+	}
+	if tc.Text != "ok" {
+		t.Errorf("text = %q, want %q", tc.Text, "ok")
+	}
+}
+
+func TestServerListResources(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := mcp.NewServer(&mcp.Implementation{Name: "fake-server"}, nil)
+	srv.AddResource(&mcp.Resource{URI: "test://r", Name: "r"}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return &mcp.ReadResourceResult{
+			Contents: []*mcp.ResourceContents{{URI: "test://r", Text: "hello"}},
+		}, nil
+	})
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	go func() { _ = srv.Run(ctx, serverTransport) }()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewServerFromSession(session)
+	defer s.Close()
+
+	result, err := s.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListResources error: %v", err)
+	}
+	if len(result.Resources) != 1 || result.Resources[0].URI != "test://r" {
+		t.Errorf("expected [test://r], got %v", result.Resources)
+	}
+}
+
+func TestServerReadResource(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := mcp.NewServer(&mcp.Implementation{Name: "fake-server"}, nil)
+	srv.AddResource(&mcp.Resource{URI: "test://r", Name: "r"}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return &mcp.ReadResourceResult{
+			Contents: []*mcp.ResourceContents{{URI: "test://r", Text: "hello"}},
+		}, nil
+	})
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	go func() { _ = srv.Run(ctx, serverTransport) }()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewServerFromSession(session)
+	defer s.Close()
+
+	result, err := s.ReadResource(ctx, &mcp.ReadResourceParams{URI: "test://r"})
+	if err != nil {
+		t.Fatalf("ReadResource error: %v", err)
+	}
+	if len(result.Contents) != 1 || result.Contents[0].Text != "hello" {
+		t.Errorf("expected 'hello', got %v", result.Contents)
+	}
+}

@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"os"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 	"skillful-mcp/internal/tools"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func NewServer(mgr *clientmanager.Manager) *mcp.Server {
+func NewServer(mgr *mcpserver.Manager) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "skillful-mcp",
 		Version: "0.1.0",

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 	"skillful-mcp/internal/server"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -72,9 +72,9 @@ func TestE2EMultipleSkills(t *testing.T) {
 		},
 	)
 
-	mgr := clientmanager.NewFromSessions(map[string]*mcp.ClientSession{
-		"database":   dbSession,
-		"filesystem": fsSession,
+	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
+		"database":   mcpserver.NewServerFromSession(dbSession),
+		"filesystem": mcpserver.NewServerFromSession(fsSession),
 	})
 	defer mgr.Close()
 
@@ -311,7 +311,7 @@ func TestE2EPositionalArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mgr := clientmanager.NewFromSessions(map[string]*mcp.ClientSession{"db": dsSession})
+	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{"db": mcpserver.NewServerFromSession(dsSession)})
 	defer mgr.Close()
 
 	upstream := server.NewServer(mgr)
@@ -394,9 +394,9 @@ func TestE2EToolNameConflict(t *testing.T) {
 	_ = skill1
 	_ = skill2
 
-	mgr := clientmanager.NewFromSessions(map[string]*mcp.ClientSession{
-		"alpha": skill1unique,
-		"beta":  skill2,
+	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
+		"alpha": mcpserver.NewServerFromSession(skill1unique),
+		"beta":  mcpserver.NewServerFromSession(skill2),
 	})
 	defer mgr.Close()
 

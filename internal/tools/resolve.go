@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -19,7 +19,7 @@ type ResolvedTool struct {
 
 // ResolveToolNames builds a mapping of all downstream tools, prefixing with
 // the skill name only when multiple skills define a tool with the same name.
-func ResolveToolNames(ctx context.Context, mgr *clientmanager.Manager) ([]ResolvedTool, error) {
+func ResolveToolNames(ctx context.Context, mgr *mcpserver.Manager) ([]ResolvedTool, error) {
 	type entry struct {
 		skillName string
 		tool      *mcp.Tool
@@ -28,7 +28,7 @@ func ResolveToolNames(ctx context.Context, mgr *clientmanager.Manager) ([]Resolv
 	// Collect all tools grouped by original name.
 	byName := make(map[string][]entry)
 	for _, skillName := range mgr.ListServerNames() {
-		session, err := mgr.GetSession(skillName)
+		session, err := mgr.GetServer(skillName)
 		if err != nil {
 			continue
 		}

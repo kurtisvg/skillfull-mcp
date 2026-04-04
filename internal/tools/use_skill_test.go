@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -62,8 +62,8 @@ func TestUseSkillListsResources(t *testing.T) {
 }
 
 func TestGetSessionUnknownSkill(t *testing.T) {
-	mgr := clientmanager.NewFromSessions(map[string]*mcp.ClientSession{})
-	_, err := mgr.GetSession("nonexistent")
+	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{})
+	_, err := mgr.GetServer("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for unknown skill")
 	}

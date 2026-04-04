@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 
 	monty "github.com/ewhauser/gomonty"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -25,7 +25,7 @@ Positional and keyword arguments are both supported.
 
 IMPORTANT: Only call tools that were returned by use_skill or described in resources. Do not guess tool names or schemas — first call use_skill to discover the available tools and their input schemas for a given skill, then write code that calls those tools.`
 
-func RegisterExecuteCode(s *mcp.Server, mgr *clientmanager.Manager) {
+func RegisterExecuteCode(s *mcp.Server, mgr *mcpserver.Manager) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "execute_code",
 		Description: executeCodeDescription,
@@ -67,7 +67,7 @@ func RegisterExecuteCode(s *mcp.Server, mgr *clientmanager.Manager) {
 
 // buildToolFunctions creates a Monty external function for each downstream tool,
 // using resolved names (prefixed only on conflict).
-func buildToolFunctions(ctx context.Context, mgr *clientmanager.Manager) (map[string]monty.ExternalFunction, error) {
+func buildToolFunctions(ctx context.Context, mgr *mcpserver.Manager) (map[string]monty.ExternalFunction, error) {
 	resolved, err := ResolveToolNames(ctx, mgr)
 	if err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func buildToolFunctions(ctx context.Context, mgr *clientmanager.Manager) (map[st
 
 	fns := make(map[string]monty.ExternalFunction, len(resolved))
 	for _, rt := range resolved {
-		session, err := mgr.GetSession(rt.SkillName)
+		session, err := mgr.GetServer(rt.SkillName)
 		if err != nil {
 			continue
 		}

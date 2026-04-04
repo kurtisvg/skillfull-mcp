@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"skillful-mcp/internal/clientmanager"
+	"skillful-mcp/internal/mcpserver"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -25,12 +25,12 @@ type resolvedInfo struct {
 	InputSchema any    `json:"inputSchema,omitempty"`
 }
 
-func RegisterUseSkill(s *mcp.Server, mgr *clientmanager.Manager) {
+func RegisterUseSkill(s *mcp.Server, mgr *mcpserver.Manager) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "use_skill",
 		Description: "List tools and resources available in a specific skill. Tool names match the function names available in execute_code.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input useSkillInput) (*mcp.CallToolResult, any, error) {
-		_, err := mgr.GetSession(input.SkillName)
+		_, err := mgr.GetServer(input.SkillName)
 		if err != nil {
 			result := &mcp.CallToolResult{}
 			result.SetError(err)
@@ -63,7 +63,7 @@ func RegisterUseSkill(s *mcp.Server, mgr *clientmanager.Manager) {
 		}
 
 		// Resources are optional — some servers don't support them.
-		session, _ := mgr.GetSession(input.SkillName)
+		session, _ := mgr.GetServer(input.SkillName)
 		resourcesResult, err := session.ListResources(ctx, nil)
 		if err == nil && resourcesResult != nil {
 			info.Resources = resourcesResult.Resources
