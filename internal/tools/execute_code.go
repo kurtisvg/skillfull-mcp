@@ -112,11 +112,11 @@ func buildToolFunctions(mgr *mcpserver.Manager) map[string]monty.ExternalFunctio
 			}
 
 			if toolResult.IsError {
-				text := extractText(toolResult)
+				text := extractErrorText(toolResult)
 				return monty.Return(monty.String(fmt.Sprintf("error: %s", text))), nil
 			}
 
-			return monty.Return(monty.String(extractText(toolResult))), nil
+			return monty.Return(extractResult(toolResult)), nil
 		}
 	}
 
@@ -126,16 +126,39 @@ func buildToolFunctions(mgr *mcpserver.Manager) map[string]monty.ExternalFunctio
 // validateMontyValue checks that a Monty value matches the expected JSON Schema
 // types for a parameter. Returns nil if validation passes or types are unknown.
 func validateMontyValue(v monty.Value, param mcpserver.ParamInfo) error {
-	if len(param.Types) == 0 {
+	types := extractSchemaTypes(param.Schema)
+	if len(types) == 0 {
 		return nil
 	}
 	kind := v.Kind()
-	for _, t := range param.Types {
+	for _, t := range types {
 		if jsonSchemaTypeMatchesMonty(t, kind) {
 			return nil
 		}
 	}
-	return fmt.Errorf("parameter %q: expected %s, got %s", param.Name, param.Types[0], kind)
+	return fmt.Errorf("parameter %q: expected %s, got %s", param.Name, types[0], kind)
+}
+
+// extractSchemaTypes extracts the top-level type(s) from a JSON Schema property.
+func extractSchemaTypes(schema any) []string {
+	m, ok := schema.(map[string]any)
+	if !ok {
+		return nil
+	}
+	switch t := m["type"].(type) {
+	case string:
+		return []string{t}
+	case []any:
+		types := make([]string, 0, len(t))
+		for _, item := range t {
+			if s, ok := item.(string); ok {
+				types = append(types, s)
+			}
+		}
+		return types
+	default:
+		return nil
+	}
 }
 
 // jsonSchemaTypeMatchesMonty checks if a JSON Schema type is compatible with a Monty ValueKind.
@@ -195,12 +218,52 @@ func montyValueToAny(v monty.Value) any {
 	}
 }
 
-// extractText pulls the first text content from a CallToolResult.
-func extractText(result *mcp.CallToolResult) string {
+// anyToMonty converts a Go value (from JSON unmarshaling) to a Monty Value.
+func anyToMonty(v any) monty.Value {
+	switch val := v.(type) {
+	case string:
+		return monty.String(val)
+	case float64:
+		if val == float64(int64(val)) {
+			return monty.Int(int64(val))
+		}
+		return monty.Float(val)
+	case bool:
+		return monty.Bool(val)
+	case nil:
+		return monty.None()
+	case map[string]any:
+		pairs := make(monty.Dict, 0, len(val))
+		for k, v := range val {
+			pairs = append(pairs, monty.Pair{Key: monty.String(k), Value: anyToMonty(v)})
+		}
+		return monty.DictValue(pairs)
+	case []any:
+		items := make([]monty.Value, len(val))
+		for i, item := range val {
+			items[i] = anyToMonty(item)
+		}
+		return monty.List(items...)
+	default:
+		return monty.String(fmt.Sprintf("%v", val))
+	}
+}
+
+// extractErrorText pulls the first text content from a CallToolResult for error messages.
+func extractErrorText(result *mcp.CallToolResult) string {
 	for _, c := range result.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
 			return tc.Text
 		}
 	}
 	return ""
+}
+
+// extractResult converts a CallToolResult to a Monty value.
+// Prefers structured content when available; otherwise extracts first text content.
+func extractResult(result *mcp.CallToolResult) monty.Value {
+	if result.StructuredContent != nil {
+		return anyToMonty(result.StructuredContent)
+	}
+	return monty.String(extractErrorText(result))
 }

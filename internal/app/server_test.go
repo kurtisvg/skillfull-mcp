@@ -214,9 +214,12 @@ func TestE2EMultipleSkills(t *testing.T) {
 	})
 
 	t.Run("execute_code_call_tool", func(t *testing.T) {
+		code := dedent(`
+			execute_sql(sql="SELECT 1")
+		`)
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      "execute_code",
-			Arguments: map[string]any{"code": `execute_sql(sql="SELECT 1")`},
+			Arguments: map[string]any{"code": code},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -240,11 +243,11 @@ func TestE2EMultipleSkills(t *testing.T) {
 	})
 
 	t.Run("execute_code_multi_tool", func(t *testing.T) {
-		code := `
-a = execute_sql(sql="SELECT 1")
-b = read_file(path="/tmp/test.txt")
-a + " | " + b
-`
+		code := dedent(`
+			a = execute_sql(sql="SELECT 1")
+			b = read_file(path="/tmp/test.txt")
+			a + " | " + b
+		`)
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      "execute_code",
 			Arguments: map[string]any{"code": code},
@@ -329,9 +332,12 @@ func TestE2EPositionalArgs(t *testing.T) {
 	session := connectTestClient(t, ctx, mgr)
 
 	t.Run("positional_arg", func(t *testing.T) {
+		code := dedent(`
+			execute_sql("SELECT 1")
+		`)
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      "execute_code",
-			Arguments: map[string]any{"code": `execute_sql("SELECT 1")`},
+			Arguments: map[string]any{"code": code},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -351,9 +357,12 @@ func TestE2EPositionalArgs(t *testing.T) {
 	})
 
 	t.Run("keyword_arg", func(t *testing.T) {
+		code := dedent(`
+			execute_sql(sql="SELECT 2")
+		`)
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      "execute_code",
-			Arguments: map[string]any{"code": `execute_sql(sql="SELECT 2")`},
+			Arguments: map[string]any{"code": code},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -427,9 +436,12 @@ func TestE2EToolNameConflict(t *testing.T) {
 	})
 
 	t.Run("execute_code_prefixed_name", func(t *testing.T) {
+		code := dedent(`
+			alpha_search(q="test")
+		`)
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      "execute_code",
-			Arguments: map[string]any{"code": `alpha_search(q="test")`},
+			Arguments: map[string]any{"code": code},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -449,9 +461,12 @@ func TestE2EToolNameConflict(t *testing.T) {
 	})
 
 	t.Run("execute_code_unique_name", func(t *testing.T) {
+		code := dedent(`
+			unique_tool()
+		`)
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      "execute_code",
-			Arguments: map[string]any{"code": `unique_tool()`},
+			Arguments: map[string]any{"code": code},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -469,6 +484,123 @@ func TestE2EToolNameConflict(t *testing.T) {
 			t.Errorf("tool = %v, want 'unique_tool'", resp["tool"])
 		}
 	})
+}
+
+func TestE2EStructuredOutput(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	type WeatherInput struct {
+		Location string `json:"location" jsonschema:"city name"`
+	}
+	type WeatherOutput struct {
+		Temperature float64 `json:"temperature"`
+		Conditions  string  `json:"conditions"`
+	}
+
+	ds := mcp.NewServer(&mcp.Implementation{Name: "weather-server"}, nil)
+	mcp.AddTool(
+		ds,
+		&mcp.Tool{Name: "get_weather", Description: "Get weather data"},
+		func(ctx context.Context, req *mcp.CallToolRequest, input WeatherInput) (*mcp.CallToolResult, WeatherOutput, error) {
+			return &mcp.CallToolResult{}, WeatherOutput{
+				Temperature: 22.5,
+				Conditions:  "Partly cloudy",
+			}, nil
+		},
+	)
+
+	dsServerT, dsClientT := mcp.NewInMemoryTransports()
+	go func() { _ = ds.Run(ctx, dsServerT) }()
+	dsClient := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
+	dsSession, err := dsClient.Connect(ctx, dsClientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := mcpserver.NewServerFromSession(ctx, dsSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{"weather": srv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Close()
+
+	session := connectTestClient(t, ctx, mgr)
+
+	t.Run("access_string_field", func(t *testing.T) {
+		code := dedent(`
+			w = get_weather(location="NYC")
+			w["conditions"]
+		`)
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "execute_code",
+			Arguments: map[string]any{"code": code},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError {
+			tc := result.Content[0].(*mcp.TextContent)
+			t.Fatalf("error: %s", tc.Text)
+		}
+		tc := result.Content[0].(*mcp.TextContent)
+		if tc.Text != "Partly cloudy" {
+			t.Errorf("expected 'Partly cloudy', got %q", tc.Text)
+		}
+	})
+
+	t.Run("access_numeric_field", func(t *testing.T) {
+		code := dedent(`
+			w = get_weather(location="NYC")
+			w["temperature"]
+		`)
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "execute_code",
+			Arguments: map[string]any{"code": code},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError {
+			tc := result.Content[0].(*mcp.TextContent)
+			t.Fatalf("error: %s", tc.Text)
+		}
+		tc := result.Content[0].(*mcp.TextContent)
+		if tc.Text != "22.5" {
+			t.Errorf("expected '22.5', got %q", tc.Text)
+		}
+	})
+}
+
+// dedent strips the common leading whitespace from all non-empty lines.
+func dedent(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+
+	// Find minimum indentation across non-empty lines.
+	minIndent := -1
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		if trimmed == "" {
+			continue
+		}
+		indent := len(line) - len(trimmed)
+		if minIndent < 0 || indent < minIndent {
+			minIndent = indent
+		}
+	}
+	if minIndent <= 0 {
+		return strings.TrimSpace(s)
+	}
+
+	for i, line := range lines {
+		if len(line) >= minIndent {
+			lines[i] = line[minIndent:]
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func splitOnce(s, sep string) []string {

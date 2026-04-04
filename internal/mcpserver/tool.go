@@ -15,12 +15,13 @@ type Tool struct {
 	SkillName    string
 	Description  string
 	Params       []ParamInfo
+	OutputSchema any // raw JSON Schema for output, nil = unstructured (str)
 }
 
 // ParamInfo describes a parameter extracted from a tool's JSON Schema.
 type ParamInfo struct {
-	Name     string   // property name from JSON Schema
-	Types    []string // allowed JSON Schema types, e.g. ["string"] or ["string", "null"]
+	Name     string
+	Schema   any // raw JSON Schema for this property
 	Required bool
 }
 
@@ -28,7 +29,7 @@ type ParamInfo struct {
 func (t *Tool) Signature() string {
 	var parts []string
 	for _, p := range t.Params {
-		pyType := jsonSchemaToPython(p.Types)
+		pyType := formatSchema(p.Schema)
 		part := p.Name + ": " + pyType
 		if !p.Required {
 			part += " = None"
@@ -36,7 +37,12 @@ func (t *Tool) Signature() string {
 		parts = append(parts, part)
 	}
 
-	sig := fmt.Sprintf("%s(%s) -> str", t.ResolvedName, strings.Join(parts, ", "))
+	returnType := "str"
+	if t.OutputSchema != nil {
+		returnType = formatSchema(t.OutputSchema)
+	}
+
+	sig := fmt.Sprintf("%s(%s) -> %s", t.ResolvedName, strings.Join(parts, ", "), returnType)
 	if t.Description != "" {
 		sig += "\n  " + t.Description
 	}
@@ -54,6 +60,7 @@ func newTool(resolvedName, originalName, skillName string, tool *mcp.Tool) (Tool
 		SkillName:    skillName,
 		Description:  tool.Description,
 		Params:       params,
+		OutputSchema: tool.OutputSchema,
 	}, nil
 }
 
@@ -88,7 +95,7 @@ func extractParamSchema(schema any) ([]ParamInfo, error) {
 				requiredSet[name] = true
 				params = append(params, ParamInfo{
 					Name:     name,
-					Types:    extractPropertyTypes(props[name]),
+					Schema:   props[name],
 					Required: true,
 				})
 			}
@@ -107,7 +114,7 @@ func extractParamSchema(schema any) ([]ParamInfo, error) {
 	for _, name := range optional {
 		params = append(params, ParamInfo{
 			Name:     name,
-			Types:    extractPropertyTypes(props[name]),
+			Schema:   props[name],
 			Required: false,
 		})
 	}
@@ -115,65 +122,89 @@ func extractParamSchema(schema any) ([]ParamInfo, error) {
 	return params, nil
 }
 
-// extractPropertyTypes extracts the "type" field from a JSON Schema property.
-// Handles both string ("type": "string") and array ("type": ["string", "null"]) forms.
-func extractPropertyTypes(propSchema any) []string {
-	pm, ok := propSchema.(map[string]any)
-	if !ok {
-		return nil
+// formatSchema converts a JSON Schema to a Python type annotation string.
+// Handles nested types: objects with properties, arrays with items, unions.
+func formatSchema(schema any) string {
+	if schema == nil {
+		return "any"
 	}
-	switch t := pm["type"].(type) {
+	m, ok := schema.(map[string]any)
+	if !ok {
+		return "any"
+	}
+
+	// Handle type field — can be string or array (union).
+	switch t := m["type"].(type) {
 	case string:
-		return []string{t}
+		return formatSingleType(t, m)
 	case []any:
-		types := make([]string, 0, len(t))
+		var pyTypes []string
+		nullable := false
 		for _, item := range t {
 			if s, ok := item.(string); ok {
-				types = append(types, s)
+				if s == "null" {
+					nullable = true
+				} else {
+					pyTypes = append(pyTypes, formatSingleType(s, m))
+				}
 			}
 		}
-		if len(types) == 0 {
-			return nil
+		if len(pyTypes) == 0 {
+			if nullable {
+				return "None"
+			}
+			return "any"
 		}
-		return types
+		result := strings.Join(pyTypes, " | ")
+		if nullable {
+			result += " | None"
+		}
+		return result
 	default:
-		return nil
+		return "any"
 	}
 }
 
-// jsonSchemaToPython maps JSON Schema types to Python type annotations.
-func jsonSchemaToPython(types []string) string {
-	if len(types) == 0 {
-		return "any"
-	}
-	var pyTypes []string
-	nullable := false
-	for _, t := range types {
-		switch t {
-		case "string":
-			pyTypes = append(pyTypes, "str")
-		case "integer":
-			pyTypes = append(pyTypes, "int")
-		case "number":
-			pyTypes = append(pyTypes, "float")
-		case "boolean":
-			pyTypes = append(pyTypes, "bool")
-		case "array":
-			pyTypes = append(pyTypes, "list")
-		case "object":
-			pyTypes = append(pyTypes, "dict")
-		case "null":
-			nullable = true
-		default:
-			pyTypes = append(pyTypes, t)
-		}
-	}
-	if len(pyTypes) == 0 {
+// formatSingleType formats a single JSON Schema type with nested detail.
+func formatSingleType(typeName string, schema map[string]any) string {
+	switch typeName {
+	case "string":
+		return "str"
+	case "integer":
+		return "int"
+	case "number":
+		return "float"
+	case "boolean":
+		return "bool"
+	case "null":
 		return "None"
+	case "array":
+		if items, ok := schema["items"]; ok {
+			return "list[" + formatSchema(items) + "]"
+		}
+		return "list"
+	case "object":
+		if props, ok := schema["properties"].(map[string]any); ok && len(props) > 0 {
+			return formatObjectProps(props)
+		}
+		return "dict"
+	default:
+		return typeName
 	}
-	result := strings.Join(pyTypes, " | ")
-	if nullable {
-		result += " | None"
+}
+
+// formatObjectProps formats an object schema's properties as {"key": type, ...}.
+func formatObjectProps(props map[string]any) string {
+	// Sort keys for deterministic output.
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
 	}
-	return result
+	sort.Strings(keys)
+
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("%q: %s", k, formatSchema(props[k]))
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
 }

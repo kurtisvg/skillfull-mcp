@@ -24,11 +24,11 @@ func TestExtractParamSchemaRequiredAndOptional(t *testing.T) {
 		t.Fatalf("expected 2 params, got %d", len(params))
 	}
 	// Required first, then optional sorted.
-	if params[0].Name != "sql" || params[0].Types[0] != "string" || !params[0].Required {
-		t.Errorf("params[0] = %+v, want sql/string/required", params[0])
+	if params[0].Name != "sql" || formatSchema(params[0].Schema) != "str" || !params[0].Required {
+		t.Errorf("params[0]: name=%q type=%s required=%v", params[0].Name, formatSchema(params[0].Schema), params[0].Required)
 	}
-	if params[1].Name != "limit" || params[1].Types[0] != "integer" || params[1].Required {
-		t.Errorf("params[1] = %+v, want limit/integer/optional", params[1])
+	if params[1].Name != "limit" || formatSchema(params[1].Schema) != "int" || params[1].Required {
+		t.Errorf("params[1]: name=%q type=%s required=%v", params[1].Name, formatSchema(params[1].Schema), params[1].Required)
 	}
 }
 
@@ -49,7 +49,6 @@ func TestExtractParamSchemaNoRequired(t *testing.T) {
 	if len(params) != 3 {
 		t.Fatalf("expected 3 params, got %d", len(params))
 	}
-	// All sorted lexicographically, all optional.
 	expected := []string{"alpha", "beta", "gamma"}
 	for i, name := range expected {
 		if params[i].Name != name {
@@ -79,7 +78,6 @@ func TestExtractParamSchemaRequiredWithNonRequiredSorted(t *testing.T) {
 	if len(params) != 3 {
 		t.Fatalf("expected 3 params, got %d", len(params))
 	}
-	// z first (required), then a, c (sorted).
 	expected := []string{"z", "a", "c"}
 	for i, name := range expected {
 		if params[i].Name != name {
@@ -114,7 +112,7 @@ func TestExtractParamSchemaEmptyProperties(t *testing.T) {
 	}
 }
 
-func TestExtractParamSchemaArrayType(t *testing.T) {
+func TestExtractParamSchemaUnionType(t *testing.T) {
 	t.Parallel()
 	schema := map[string]any{
 		"type": "object",
@@ -129,8 +127,8 @@ func TestExtractParamSchemaArrayType(t *testing.T) {
 	if len(params) != 1 {
 		t.Fatalf("expected 1 param, got %d", len(params))
 	}
-	if len(params[0].Types) != 2 || params[0].Types[0] != "string" || params[0].Types[1] != "null" {
-		t.Errorf("types = %v, want [string null]", params[0].Types)
+	if got := formatSchema(params[0].Schema); got != "str | None" {
+		t.Errorf("formatSchema = %q, want %q", got, "str | None")
 	}
 }
 
@@ -149,8 +147,8 @@ func TestExtractParamSchemaNoTypeField(t *testing.T) {
 	if len(params) != 1 {
 		t.Fatalf("expected 1 param, got %d", len(params))
 	}
-	if params[0].Types != nil {
-		t.Errorf("types = %v, want nil", params[0].Types)
+	if got := formatSchema(params[0].Schema); got != "any" {
+		t.Errorf("formatSchema = %q, want %q", got, "any")
 	}
 }
 
@@ -174,6 +172,97 @@ func TestExtractParamSchemaInvalidPropertiesType(t *testing.T) {
 	}
 }
 
+// --- formatSchema tests ---
+
+func TestFormatSchemaSimpleTypes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		schema any
+		want   string
+	}{
+		{nil, "any"},
+		{map[string]any{"type": "string"}, "str"},
+		{map[string]any{"type": "integer"}, "int"},
+		{map[string]any{"type": "number"}, "float"},
+		{map[string]any{"type": "boolean"}, "bool"},
+		{map[string]any{"type": "null"}, "None"},
+		{map[string]any{"type": "array"}, "list"},
+		{map[string]any{"type": "object"}, "dict"},
+	}
+	for _, tt := range tests {
+		if got := formatSchema(tt.schema); got != tt.want {
+			t.Errorf("formatSchema(%v) = %q, want %q", tt.schema, got, tt.want)
+		}
+	}
+}
+
+func TestFormatSchemaArrayWithItems(t *testing.T) {
+	t.Parallel()
+	schema := map[string]any{
+		"type":  "array",
+		"items": map[string]any{"type": "string"},
+	}
+	if got := formatSchema(schema); got != "list[str]" {
+		t.Errorf("got %q, want %q", got, "list[str]")
+	}
+}
+
+func TestFormatSchemaNestedArray(t *testing.T) {
+	t.Parallel()
+	schema := map[string]any{
+		"type": "array",
+		"items": map[string]any{
+			"type":  "array",
+			"items": map[string]any{"type": "integer"},
+		},
+	}
+	if got := formatSchema(schema); got != "list[list[int]]" {
+		t.Errorf("got %q, want %q", got, "list[list[int]]")
+	}
+}
+
+func TestFormatSchemaObjectWithProperties(t *testing.T) {
+	t.Parallel()
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"temperature": map[string]any{"type": "number"},
+			"conditions":  map[string]any{"type": "string"},
+			"humidity":    map[string]any{"type": "number"},
+		},
+	}
+	want := `{"conditions": str, "humidity": float, "temperature": float}`
+	if got := formatSchema(schema); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestFormatSchemaUnionType(t *testing.T) {
+	t.Parallel()
+	schema := map[string]any{"type": []any{"string", "null"}}
+	if got := formatSchema(schema); got != "str | None" {
+		t.Errorf("got %q, want %q", got, "str | None")
+	}
+}
+
+func TestFormatSchemaArrayOfObjects(t *testing.T) {
+	t.Parallel()
+	schema := map[string]any{
+		"type": "array",
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+				"id":   map[string]any{"type": "integer"},
+			},
+		},
+	}
+	want := `list[{"id": int, "name": str}]`
+	if got := formatSchema(schema); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 // --- Tool.Signature tests ---
 
 func TestToolSignatureWithParams(t *testing.T) {
@@ -182,8 +271,8 @@ func TestToolSignatureWithParams(t *testing.T) {
 		ResolvedName: "execute_sql",
 		Description:  "Run a SQL query",
 		Params: []ParamInfo{
-			{Name: "sql", Types: []string{"string"}, Required: true},
-			{Name: "limit", Types: []string{"integer"}, Required: false},
+			{Name: "sql", Schema: map[string]any{"type": "string"}, Required: true},
+			{Name: "limit", Schema: map[string]any{"type": "integer"}, Required: false},
 		},
 	}
 	want := "execute_sql(sql: str, limit: int = None) -> str\n  Run a SQL query"
@@ -209,10 +298,49 @@ func TestToolSignatureNoDescription(t *testing.T) {
 	tool := Tool{
 		ResolvedName: "ping",
 		Params: []ParamInfo{
-			{Name: "host", Types: []string{"string"}, Required: true},
+			{Name: "host", Schema: map[string]any{"type": "string"}, Required: true},
 		},
 	}
 	want := "ping(host: str) -> str"
+	if got := tool.Signature(); got != want {
+		t.Errorf("Signature() = %q, want %q", got, want)
+	}
+}
+
+func TestToolSignatureStructuredOutput(t *testing.T) {
+	t.Parallel()
+	tool := Tool{
+		ResolvedName: "get_weather",
+		Description:  "Get weather data",
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"temperature": map[string]any{"type": "number"},
+				"conditions":  map[string]any{"type": "string"},
+				"humidity":    map[string]any{"type": "number"},
+			},
+		},
+		Params: []ParamInfo{
+			{Name: "location", Schema: map[string]any{"type": "string"}, Required: true},
+		},
+	}
+	want := `get_weather(location: str) -> {"conditions": str, "humidity": float, "temperature": float}` + "\n  Get weather data"
+	if got := tool.Signature(); got != want {
+		t.Errorf("Signature() = %q, want %q", got, want)
+	}
+}
+
+func TestToolSignatureListOutput(t *testing.T) {
+	t.Parallel()
+	tool := Tool{
+		ResolvedName: "list_users",
+		Description:  "List all users",
+		OutputSchema: map[string]any{
+			"type":  "array",
+			"items": map[string]any{"type": "string"},
+		},
+	}
+	want := "list_users() -> list[str]\n  List all users"
 	if got := tool.Signature(); got != want {
 		t.Errorf("Signature() = %q, want %q", got, want)
 	}
