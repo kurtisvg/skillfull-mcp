@@ -278,13 +278,41 @@ func TestAnyToMonty(t *testing.T) {
 		input    any
 		wantKind monty.ValueKind
 	}{
-		{name: "string", input: "hello", wantKind: "string"},
-		{name: "float", input: 3.14, wantKind: "float"},
-		{name: "int_from_float", input: float64(42), wantKind: "int"},
-		{name: "bool", input: true, wantKind: "bool"},
-		{name: "nil", input: nil, wantKind: "none"},
-		{name: "map", input: map[string]any{"key": "val"}, wantKind: "dict"},
-		{name: "slice", input: []any{"a", "b"}, wantKind: "list"},
+		{
+			name:     "string",
+			input:    "hello",
+			wantKind: "string",
+		},
+		{
+			name:     "float",
+			input:    3.14,
+			wantKind: "float",
+		},
+		{
+			name:     "int_from_float",
+			input:    float64(42),
+			wantKind: "int",
+		},
+		{
+			name:     "bool",
+			input:    true,
+			wantKind: "bool",
+		},
+		{
+			name:     "nil",
+			input:    nil,
+			wantKind: "none",
+		},
+		{
+			name:     "map",
+			input:    map[string]any{"key": "val"},
+			wantKind: "dict",
+		},
+		{
+			name:     "slice",
+			input:    []any{"a", "b"},
+			wantKind: "list",
+		},
 	}
 
 	for _, tt := range tests {

@@ -177,22 +177,58 @@ func TestExtractParamSchemaInvalidPropertiesType(t *testing.T) {
 func TestFormatSchemaSimpleTypes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
+		name   string
 		schema any
 		want   string
 	}{
-		{nil, "any"},
-		{map[string]any{"type": "string"}, "str"},
-		{map[string]any{"type": "integer"}, "int"},
-		{map[string]any{"type": "number"}, "float"},
-		{map[string]any{"type": "boolean"}, "bool"},
-		{map[string]any{"type": "null"}, "None"},
-		{map[string]any{"type": "array"}, "list"},
-		{map[string]any{"type": "object"}, "dict"},
+		{
+			name:   "nil",
+			schema: nil,
+			want:   "any",
+		},
+		{
+			name:   "string",
+			schema: map[string]any{"type": "string"},
+			want:   "str",
+		},
+		{
+			name:   "integer",
+			schema: map[string]any{"type": "integer"},
+			want:   "int",
+		},
+		{
+			name:   "number",
+			schema: map[string]any{"type": "number"},
+			want:   "float",
+		},
+		{
+			name:   "boolean",
+			schema: map[string]any{"type": "boolean"},
+			want:   "bool",
+		},
+		{
+			name:   "null",
+			schema: map[string]any{"type": "null"},
+			want:   "None",
+		},
+		{
+			name:   "array",
+			schema: map[string]any{"type": "array"},
+			want:   "list",
+		},
+		{
+			name:   "object",
+			schema: map[string]any{"type": "object"},
+			want:   "dict",
+		},
 	}
 	for _, tt := range tests {
-		if got := formatSchema(tt.schema); got != tt.want {
-			t.Errorf("formatSchema(%v) = %q, want %q", tt.schema, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := formatSchema(tt.schema); got != tt.want {
+				t.Errorf("formatSchema() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
