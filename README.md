@@ -10,7 +10,7 @@ Sounds like a Skill Issue 😉
 
 **skillful-mcp** eliminates tool bloat by turning your MCP servers into MCP-native Agent Skills.
 
-- 🔍 **On-demand discovery** — agents see 4 tools instead of 80, loading schemas only when needed
+- 🔍 **On-demand discovery** — start with 4 tools, discover more as needed
 - ⚡ **Code mode** — orchestrate multiple tools in a single Python round-trip
 - 📄 **Standard config** — uses the same `mcp.json` as Claude Code / Claude Desktop
 - 🔌 **Any transport** — stdio, HTTP, SSE
