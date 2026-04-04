@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"skillful-mcp/internal/config"
 	"skillful-mcp/internal/mcpserver"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -518,6 +519,137 @@ func TestE2EStructuredOutput(t *testing.T) {
 		tc := result.Content[0].(*mcp.TextContent)
 		if tc.Text != "22.5" {
 			t.Errorf("expected '22.5', got %q", tc.Text)
+		}
+	})
+}
+
+func TestE2EServerOptions(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	// Downstream server has 3 tools and 2 resources.
+	session := startFakeServer(t, ctx, "Original description",
+		[]mcp.Tool{
+			{Name: "allowed_tool", Description: "This tool is allowed"},
+			{Name: "blocked_tool", Description: "This tool is blocked"},
+			{Name: "another_allowed", Description: "Also allowed"},
+		},
+		[]mcp.Resource{
+			{URI: "file:///allowed.txt", Name: "allowed.txt", Description: "Allowed resource"},
+			{URI: "file:///blocked.txt", Name: "blocked.txt", Description: "Blocked resource"},
+		},
+	)
+
+	srv, err := mcpserver.NewServerFromSession(ctx, session, config.ServerOptions{
+		Description:      "Custom skill description",
+		AllowedTools:     []string{"allowed_tool", "another_allowed"},
+		AllowedResources: []string{"file:///allowed.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{"filtered": srv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Close()
+
+	upstream := connectTestClient(t, ctx, mgr)
+
+	t.Run("list_skills_shows_custom_description", func(t *testing.T) {
+		result, err := upstream.CallTool(ctx, &mcp.CallToolParams{Name: "list_skills"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc := result.Content[0].(*mcp.TextContent)
+		if !strings.Contains(tc.Text, "Custom skill description") {
+			t.Errorf("expected custom description, got %q", tc.Text)
+		}
+		if strings.Contains(tc.Text, "Original description") {
+			t.Error("original description should be overridden")
+		}
+	})
+
+	t.Run("use_skill_shows_only_allowed_tools", func(t *testing.T) {
+		result, err := upstream.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "use_skill",
+			Arguments: map[string]any{"skill_name": "filtered"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc := result.Content[0].(*mcp.TextContent)
+		if !strings.Contains(tc.Text, "allowed_tool(") {
+			t.Errorf("expected allowed_tool signature, got %q", tc.Text)
+		}
+		if !strings.Contains(tc.Text, "another_allowed(") {
+			t.Errorf("expected another_allowed signature, got %q", tc.Text)
+		}
+		if strings.Contains(tc.Text, "blocked_tool") {
+			t.Error("blocked_tool should not appear")
+		}
+	})
+
+	t.Run("use_skill_shows_only_allowed_resources", func(t *testing.T) {
+		result, err := upstream.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "use_skill",
+			Arguments: map[string]any{"skill_name": "filtered"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc := result.Content[0].(*mcp.TextContent)
+		if !strings.Contains(tc.Text, "file:///allowed.txt") {
+			t.Errorf("expected allowed resource, got %q", tc.Text)
+		}
+		if strings.Contains(tc.Text, "file:///blocked.txt") {
+			t.Error("blocked resource should not appear")
+		}
+	})
+
+	t.Run("execute_code_can_call_allowed_tool", func(t *testing.T) {
+		code := `allowed_tool()`
+		result, err := upstream.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "execute_code",
+			Arguments: map[string]any{"code": code},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.IsError {
+			tc := result.Content[0].(*mcp.TextContent)
+			t.Fatalf("error: %s", tc.Text)
+		}
+	})
+
+	t.Run("execute_code_cannot_call_blocked_tool", func(t *testing.T) {
+		code := `blocked_tool()`
+		result, err := upstream.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "execute_code",
+			Arguments: map[string]any{"code": code},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.IsError {
+			t.Error("expected error calling blocked tool")
+		}
+	})
+
+	t.Run("blocked_tool_does_not_cause_prefix", func(t *testing.T) {
+		// If blocked_tool were visible, tools with same name in other
+		// servers would get prefixed. Since it's filtered, no prefix needed.
+		result, err := upstream.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "use_skill",
+			Arguments: map[string]any{"skill_name": "filtered"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc := result.Content[0].(*mcp.TextContent)
+		// Tool names should not have "filtered_" prefix since there's no conflict.
+		if strings.Contains(tc.Text, "filtered_allowed_tool") {
+			t.Error("tools should not be prefixed when no conflict exists")
 		}
 	})
 }

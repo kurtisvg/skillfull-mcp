@@ -78,6 +78,19 @@ Create an `mcp.json` file:
 Each entry in `mcpServers` is a downstream server that becomes a skill. The key
 is the skill name. The value depends on the transport type:
 
+### Common options
+
+All server types support these optional fields:
+
+| Field | Description |
+|-------|-------------|
+| `description` | Override the server's instructions shown by `list_skills` |
+| `allowedTools` | Only expose these tool names (default: all) |
+| `allowedResources` | Only expose these resource URIs (default: all) |
+
+Excluded tools are invisible everywhere — they won't appear in `use_skill`,
+can't be called via `execute_code`, and won't cause name-conflict prefixing.
+
 ### STDIO server
 
 Spawns the server as a child process. Only env vars explicitly listed in `env`
@@ -95,6 +108,8 @@ are passed to the child — the parent environment is not inherited.
     "database": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sqlite", "mydb.db"],
+      "description": "SQL database for customer analytics",
+      "allowedTools": ["execute_sql", "list_tables"],
       "env": {
         "PATH": "/usr/local/bin:/usr/bin"
       }
@@ -159,6 +174,7 @@ go run . --config mcp.json --transport http --port 8080
 | `--transport` | `stdio` | Upstream transport: `stdio` or `http` |
 | `--host` | `localhost` | HTTP listen host |
 | `--port` | `8080` | HTTP listen port |
+| `--version` | | Print version and exit |
 
 ### Use with MCP clients
 

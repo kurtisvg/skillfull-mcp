@@ -81,11 +81,11 @@ func TestAllTools(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool_a"))
+	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"tool_a"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool_b"))
+	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"tool_b"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +104,11 @@ func TestManagerServerTools(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool_a"))
+	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"tool_a"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool_b"))
+	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"tool_b"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestManagerClose(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	session := startFakeServer(t, ctx, "tool")
+	session := startFakeServer(t, ctx, []string{"tool"}, nil)
 	srv, err := NewServerFromSession(ctx, session)
 	if err != nil {
 		t.Fatal(err)

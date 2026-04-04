@@ -39,11 +39,9 @@ func newUseSkill(mgr *mcpserver.Manager) func(context.Context, *mcp.CallToolRequ
 			lines = append(lines, t.Signature())
 		}
 
-		// Resources are optional.
-		resourcesResult, err := srv.ListResources(ctx, nil)
-		if err == nil && resourcesResult != nil && len(resourcesResult.Resources) > 0 {
+		if resources := srv.Resources(); len(resources) > 0 {
 			lines = append(lines, "\nResources:")
-			for _, r := range resourcesResult.Resources {
+			for _, r := range resources {
 				if r.Description != "" {
 					lines = append(lines, fmt.Sprintf("- %s: %s", r.URI, r.Description))
 				} else {

@@ -17,9 +17,11 @@ type Server struct {
 	session      *mcp.ClientSession
 	instructions string
 	tools        []*mcp.Tool
+	resources    []*mcp.Resource
 }
 
-// NewServer connects to a downstream MCP server and returns a Server.
+// NewServer connects to a downstream MCP server and applies config options
+// (description override, tool/resource allowlists).
 func NewServer(ctx context.Context, srv config.Server) (*Server, error) {
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "skillful-mcp",
@@ -46,7 +48,7 @@ func NewServer(ctx context.Context, srv config.Server) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := NewServerFromSession(ctx, session)
+	s, err := NewServerFromSession(ctx, session, srv.Options())
 	if err != nil {
 		session.Close()
 		return nil, err
@@ -58,8 +60,8 @@ func (s *Server) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp
 	return s.session.CallTool(ctx, params)
 }
 
-func (s *Server) ListResources(ctx context.Context, params *mcp.ListResourcesParams) (*mcp.ListResourcesResult, error) {
-	return s.session.ListResources(ctx, params)
+func (s *Server) Resources() []*mcp.Resource {
+	return s.resources
 }
 
 func (s *Server) ReadResource(ctx context.Context, params *mcp.ReadResourceParams) (*mcp.ReadResourceResult, error) {
@@ -74,8 +76,9 @@ func (s *Server) Close() error {
 	return s.session.Close()
 }
 
-// NewServerFromSession creates a Server from a pre-built session (useful for testing).
-func NewServerFromSession(ctx context.Context, session *mcp.ClientSession) (*Server, error) {
+// NewServerFromSession creates a Server from a pre-built session and applies
+// optional configuration (description override, tool/resource allowlists).
+func NewServerFromSession(ctx context.Context, session *mcp.ClientSession, opts ...config.ServerOptions) (*Server, error) {
 	s := &Server{session: session}
 	if session != nil {
 		if res := session.InitializeResult(); res != nil {
@@ -87,8 +90,57 @@ func NewServerFromSession(ctx context.Context, session *mcp.ClientSession) (*Ser
 			}
 			s.tools = append(s.tools, tool)
 		}
+		// Resources are optional — some servers don't support them.
+		for r, err := range session.Resources(ctx, nil) {
+			if err != nil {
+				break
+			}
+			s.resources = append(s.resources, r)
+		}
 	}
+
+	if len(opts) > 0 {
+		o := opts[0]
+		if o.Description != "" {
+			s.instructions = o.Description
+		}
+		if len(o.AllowedTools) > 0 {
+			s.tools = filterTools(s.tools, o.AllowedTools)
+		}
+		if len(o.AllowedResources) > 0 {
+			s.resources = filterResources(s.resources, o.AllowedResources)
+		}
+	}
+
 	return s, nil
+}
+
+func filterTools(tools []*mcp.Tool, allowed []string) []*mcp.Tool {
+	set := make(map[string]bool, len(allowed))
+	for _, name := range allowed {
+		set[name] = true
+	}
+	filtered := make([]*mcp.Tool, 0, len(allowed))
+	for _, t := range tools {
+		if set[t.Name] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}
+
+func filterResources(resources []*mcp.Resource, allowed []string) []*mcp.Resource {
+	set := make(map[string]bool, len(allowed))
+	for _, uri := range allowed {
+		set[uri] = true
+	}
+	filtered := make([]*mcp.Resource, 0, len(allowed))
+	for _, r := range resources {
+		if set[r.URI] {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
 }
 
 // toEnv converts the configured env map to a slice for exec.Cmd.

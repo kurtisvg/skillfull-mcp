@@ -199,6 +199,54 @@ func TestLoadedFieldValues(t *testing.T) {
 	}
 }
 
+func TestServerOptions(t *testing.T) {
+	t.Parallel()
+
+	jsonStr := `{
+		"mcpServers": {
+			"db": {
+				"command": "db-server",
+				"description": "SQL database for analytics",
+				"allowedTools": ["execute_sql", "list_tables"],
+				"allowedResources": ["schema://tables"]
+			},
+			"plain": {
+				"command": "plain-server"
+			}
+		}
+	}`
+	path := writeTestConfig(t, jsonStr)
+	servers, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := servers["db"].(*StdioServer)
+	opts := db.Options()
+	if opts.Description != "SQL database for analytics" {
+		t.Errorf("Description = %q, want 'SQL database for analytics'", opts.Description)
+	}
+	if len(opts.AllowedTools) != 2 || opts.AllowedTools[0] != "execute_sql" || opts.AllowedTools[1] != "list_tables" {
+		t.Errorf("AllowedTools = %v, want [execute_sql list_tables]", opts.AllowedTools)
+	}
+	if len(opts.AllowedResources) != 1 || opts.AllowedResources[0] != "schema://tables" {
+		t.Errorf("AllowedResources = %v, want [schema://tables]", opts.AllowedResources)
+	}
+
+	// Server with no options should have zero values.
+	plain := servers["plain"].(*StdioServer)
+	plainOpts := plain.Options()
+	if plainOpts.Description != "" {
+		t.Errorf("expected empty description, got %q", plainOpts.Description)
+	}
+	if len(plainOpts.AllowedTools) != 0 {
+		t.Errorf("expected no allowed tools, got %v", plainOpts.AllowedTools)
+	}
+	if len(plainOpts.AllowedResources) != 0 {
+		t.Errorf("expected no allowed resources, got %v", plainOpts.AllowedResources)
+	}
+}
+
 func TestEnvVarExpansion(t *testing.T) {
 	t.Setenv("TEST_CMD", "my-server")
 	t.Setenv("TEST_ARG", "--verbose")

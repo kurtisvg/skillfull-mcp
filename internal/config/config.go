@@ -19,6 +19,7 @@ const (
 // Server is the common interface for all server transport configurations.
 type Server interface {
 	TransportType() TransportType
+	Options() ServerOptions
 }
 
 func Load(path string) (map[string]Server, error) {
@@ -97,6 +98,15 @@ func unmarshalStrict(data []byte, v any) error {
 	return dec.Decode(v)
 }
 
+// ServerOptions contains optional fields shared by all server types.
+type ServerOptions struct {
+	Description      string   `json:"description,omitempty"`
+	AllowedTools     []string `json:"allowedTools,omitempty"`
+	AllowedResources []string `json:"allowedResources,omitempty"`
+}
+
+func (o ServerOptions) Options() ServerOptions { return o }
+
 // Server types
 
 type StdioServer struct {
@@ -104,6 +114,7 @@ type StdioServer struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	ServerOptions
 }
 
 func (*StdioServer) TransportType() TransportType { return TransportSTDIO }
@@ -112,6 +123,7 @@ type HTTPServer struct {
 	Type    string            `json:"type"`
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
+	ServerOptions
 }
 
 func (*HTTPServer) TransportType() TransportType { return TransportHTTP }
@@ -120,6 +132,7 @@ type SSEServer struct {
 	Type    string            `json:"type"`
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
+	ServerOptions
 }
 
 func (*SSEServer) TransportType() TransportType { return TransportSSE }
