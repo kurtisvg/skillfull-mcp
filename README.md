@@ -8,12 +8,12 @@
 Suffering from tool bloat? Need progressive disclosure for your MCP servers?
 Sounds like a Skill Issue 😉
 
-**skillful-mcp** eliminates tool bloat by turning your MCP servers into MCP-native Agent Skills.
+**skillful-mcp** eliminates tool bloat by turning your MCP servers into Agent Skills in an MCP-native way.
 
-- 🔍 **On-demand discovery** — start with 4 tools, discover more as needed
-- ⚡ **Code mode** — orchestrate multiple tools in a single Python round-trip
-- 📄 **Standard config** — uses the same `mcp.json` as Claude Code / Claude Desktop
-- 🔌 **Any transport** — stdio, HTTP, SSE
+- 🔍 **Progressive Disclosure** — start with 4 tools, discover more as needed
+- ⚡ **Code Mode** — trigger and combine multiple tool calls with Python
+- 🔒 **Secure sandbox** — code executes in a sandbox, not your shell
+- 🔌 **Any MCP client** — works with Gemini CLI, Claude Code, Codex, and more
 
 ## Table of contents
 
