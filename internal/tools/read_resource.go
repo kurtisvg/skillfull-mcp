@@ -14,10 +14,18 @@ type readResourceInput struct {
 }
 
 func RegisterReadResource(s *mcp.Server, mgr *mcpserver.Manager) {
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "read_resource",
-		Description: "Read a resource from a specific skill",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, input readResourceInput) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(
+		s,
+		&mcp.Tool{
+			Name:        "read_resource",
+			Description: "Read a resource from a specific skill",
+		},
+		newReadResource(mgr),
+	)
+}
+
+func newReadResource(mgr *mcpserver.Manager) func(context.Context, *mcp.CallToolRequest, readResourceInput) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, input readResourceInput) (*mcp.CallToolResult, any, error) {
 		srv, err := mgr.GetServer(input.SkillName)
 		if err != nil {
 			result := &mcp.CallToolResult{}
@@ -40,5 +48,5 @@ func RegisterReadResource(s *mcp.Server, mgr *mcpserver.Manager) {
 		}
 
 		return &mcp.CallToolResult{Content: content}, nil, nil
-	})
+	}
 }
