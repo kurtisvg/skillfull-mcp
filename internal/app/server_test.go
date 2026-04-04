@@ -95,11 +95,26 @@ func TestE2EMultipleSkills(t *testing.T) {
 		nil,
 	)
 
-	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
-		"database":   mcpserver.NewServerFromSession(dbSession),
-		"filesystem": mcpserver.NewServerFromSession(fsSession),
-		"plain":      mcpserver.NewServerFromSession(plainSession),
+	dbServer, err := mcpserver.NewServerFromSession(ctx, dbSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsServer, err := mcpserver.NewServerFromSession(ctx, fsSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainServer, err := mcpserver.NewServerFromSession(ctx, plainSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
+		"database":   dbServer,
+		"filesystem": fsServer,
+		"plain":      plainServer,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer mgr.Close()
 
 	session := connectTestClient(t, ctx, mgr)
@@ -130,30 +145,17 @@ func TestE2EMultipleSkills(t *testing.T) {
 			t.Fatal(err)
 		}
 		tc := result.Content[0].(*mcp.TextContent)
-		var info struct {
-			Skill     string                  `json:"skill"`
-			Tools     []struct{ Name string } `json:"tools"`
-			Resources []any                   `json:"resources"`
+		if !strings.Contains(tc.Text, "execute_sql(") {
+			t.Errorf("expected execute_sql signature, got %q", tc.Text)
 		}
-		if err := json.Unmarshal([]byte(tc.Text), &info); err != nil {
-			t.Fatal(err)
+		if !strings.Contains(tc.Text, "list_tables(") {
+			t.Errorf("expected list_tables signature, got %q", tc.Text)
 		}
-
-		if info.Skill != "database" {
-			t.Errorf("skill = %q, want database", info.Skill)
+		if !strings.Contains(tc.Text, "Run a SQL query") {
+			t.Errorf("expected tool description, got %q", tc.Text)
 		}
-		if len(info.Tools) != 2 {
-			t.Fatalf("expected 2 tools, got %d", len(info.Tools))
-		}
-		toolNames := map[string]bool{}
-		for _, tool := range info.Tools {
-			toolNames[tool.Name] = true
-		}
-		if !toolNames["execute_sql"] || !toolNames["list_tables"] {
-			t.Errorf("expected execute_sql and list_tables, got %v", info.Tools)
-		}
-		if len(info.Resources) != 0 {
-			t.Errorf("expected 0 resources, got %d", len(info.Resources))
+		if strings.Contains(tc.Text, "Resources:") {
+			t.Errorf("expected no resources section, got %q", tc.Text)
 		}
 	})
 
@@ -166,19 +168,14 @@ func TestE2EMultipleSkills(t *testing.T) {
 			t.Fatal(err)
 		}
 		tc := result.Content[0].(*mcp.TextContent)
-		var info struct {
-			Tools     []struct{ Name string } `json:"tools"`
-			Resources []struct{ URI string }  `json:"resources"`
+		if !strings.Contains(tc.Text, "read_file(") {
+			t.Errorf("expected read_file signature, got %q", tc.Text)
 		}
-		if err := json.Unmarshal([]byte(tc.Text), &info); err != nil {
-			t.Fatal(err)
+		if !strings.Contains(tc.Text, "Resources:") {
+			t.Errorf("expected resources section, got %q", tc.Text)
 		}
-
-		if len(info.Tools) != 1 || info.Tools[0].Name != "read_file" {
-			t.Errorf("expected [read_file], got %v", info.Tools)
-		}
-		if len(info.Resources) != 1 || info.Resources[0].URI != "file:///tmp/test.txt" {
-			t.Errorf("expected [file:///tmp/test.txt], got %v", info.Resources)
+		if !strings.Contains(tc.Text, "file:///tmp/test.txt: A test file") {
+			t.Errorf("expected resource URI and description, got %q", tc.Text)
 		}
 	})
 
@@ -319,7 +316,14 @@ func TestE2EPositionalArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{"db": mcpserver.NewServerFromSession(dsSession)})
+	dbServer, err := mcpserver.NewServerFromSession(ctx, dsSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{"db": dbServer})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer mgr.Close()
 
 	session := connectTestClient(t, ctx, mgr)
@@ -386,10 +390,21 @@ func TestE2EToolNameConflict(t *testing.T) {
 		nil,
 	)
 
-	mgr := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
-		"alpha": mcpserver.NewServerFromSession(alpha),
-		"beta":  mcpserver.NewServerFromSession(beta),
+	alphaServer, err := mcpserver.NewServerFromSession(ctx, alpha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	betaServer, err := mcpserver.NewServerFromSession(ctx, beta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := mcpserver.NewManagerFromServers(map[string]*mcpserver.Server{
+		"alpha": alphaServer,
+		"beta":  betaServer,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer mgr.Close()
 
 	session := connectTestClient(t, ctx, mgr)
@@ -403,25 +418,11 @@ func TestE2EToolNameConflict(t *testing.T) {
 			t.Fatal(err)
 		}
 		tc := result.Content[0].(*mcp.TextContent)
-		var info struct {
-			Tools []struct{ Name string } `json:"tools"`
+		if !strings.Contains(tc.Text, "alpha_search(") {
+			t.Errorf("expected prefixed 'alpha_search(' signature, got %q", tc.Text)
 		}
-		if err := json.Unmarshal([]byte(tc.Text), &info); err != nil {
-			t.Fatal(err)
-		}
-
-		names := map[string]bool{}
-		for _, tool := range info.Tools {
-			names[tool.Name] = true
-		}
-		if !names["alpha_search"] {
-			t.Errorf("expected 'alpha_search' (prefixed due to conflict), got %v", names)
-		}
-		if !names["unique_tool"] {
-			t.Errorf("expected 'unique_tool' (no prefix, no conflict), got %v", names)
-		}
-		if names["search"] {
-			t.Error("'search' should be prefixed due to conflict")
+		if !strings.Contains(tc.Text, "unique_tool(") {
+			t.Errorf("expected 'unique_tool(' signature, got %q", tc.Text)
 		}
 	})
 

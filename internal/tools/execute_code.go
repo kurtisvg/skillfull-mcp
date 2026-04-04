@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 
 	"skillful-mcp/internal/mcpserver"
 
@@ -43,12 +42,7 @@ func RegisterExecuteCode(s *mcp.Server, mgr *mcpserver.Manager) {
 			return result, nil, nil
 		}
 
-		fns, err := buildToolFunctions(ctx, mgr)
-		if err != nil {
-			result := &mcp.CallToolResult{}
-			result.SetError(err)
-			return result, nil, nil
-		}
+		fns := buildToolFunctions(mgr)
 
 		value, err := runner.Run(ctx, monty.RunOptions{
 			Functions: fns,
@@ -67,35 +61,30 @@ func RegisterExecuteCode(s *mcp.Server, mgr *mcpserver.Manager) {
 
 // buildToolFunctions creates a Monty external function for each downstream tool,
 // using resolved names (prefixed only on conflict).
-func buildToolFunctions(ctx context.Context, mgr *mcpserver.Manager) (map[string]monty.ExternalFunction, error) {
-	resolved, err := ResolveToolNames(ctx, mgr)
-	if err != nil {
-		return nil, err
-	}
-
-	fns := make(map[string]monty.ExternalFunction, len(resolved))
-	for _, rt := range resolved {
-		session, err := mgr.GetServer(rt.SkillName)
+func buildToolFunctions(mgr *mcpserver.Manager) map[string]monty.ExternalFunction {
+	tools := mgr.AllTools()
+	fns := make(map[string]monty.ExternalFunction, len(tools))
+	for _, t := range tools {
+		srv, err := mgr.GetServer(t.SkillName)
 		if err != nil {
 			continue
 		}
-		params := extractParamSchema(rt.Tool.InputSchema)
-		paramByName := make(map[string]paramInfo, len(params))
-		for _, p := range params {
+		paramByName := make(map[string]mcpserver.ParamInfo, len(t.Params))
+		for _, p := range t.Params {
 			paramByName[p.Name] = p
 		}
 
-		fns[rt.ResolvedName] = func(fnCtx context.Context, call monty.Call) (monty.Result, error) {
+		fns[t.ResolvedName] = func(fnCtx context.Context, call monty.Call) (monty.Result, error) {
 			args := make(map[string]any)
 
 			// Map positional args to parameter names from the schema, with type validation.
 			for i, val := range call.Args {
-				if i < len(params) {
-					if err := validateMontyValue(val, params[i]); err != nil {
+				if i < len(t.Params) {
+					if err := validateMontyValue(val, t.Params[i]); err != nil {
 						msg := err.Error()
 						return monty.Raise(monty.Exception{Type: "TypeError", Arg: &msg}), nil
 					}
-					args[params[i].Name] = montyValueToAny(val)
+					args[t.Params[i].Name] = montyValueToAny(val)
 				}
 			}
 
@@ -114,8 +103,8 @@ func buildToolFunctions(ctx context.Context, mgr *mcpserver.Manager) (map[string
 				args[key] = montyValueToAny(pair.Value)
 			}
 
-			toolResult, err := session.CallTool(fnCtx, &mcp.CallToolParams{
-				Name:      rt.OriginalName,
+			toolResult, err := srv.CallTool(fnCtx, &mcp.CallToolParams{
+				Name:      t.OriginalName,
 				Arguments: args,
 			})
 			if err != nil {
@@ -131,92 +120,12 @@ func buildToolFunctions(ctx context.Context, mgr *mcpserver.Manager) (map[string
 		}
 	}
 
-	return fns, nil
-}
-
-// paramInfo describes a single parameter extracted from a tool's JSON Schema.
-type paramInfo struct {
-	Name  string   // property name from JSON Schema
-	Types []string // allowed JSON Schema types, e.g. ["string"] or ["string", "null"]
-}
-
-// extractParamSchema extracts ordered parameter definitions from a JSON Schema.
-// Ordering: required params first (in JSON array order), then non-required sorted
-// lexicographically. This ensures deterministic positional argument mapping.
-func extractParamSchema(schema any) []paramInfo {
-	m, ok := schema.(map[string]any)
-	if !ok {
-		return nil
-	}
-	props, ok := m["properties"].(map[string]any)
-	if !ok {
-		return nil
-	}
-
-	requiredSet := make(map[string]bool)
-	var params []paramInfo
-
-	// Required params come first, in the order declared by the JSON array.
-	if required, ok := m["required"].([]any); ok {
-		for _, r := range required {
-			if name, ok := r.(string); ok {
-				requiredSet[name] = true
-				params = append(params, paramInfo{
-					Name:  name,
-					Types: extractPropertyTypes(props[name]),
-				})
-			}
-		}
-	}
-
-	// Non-required params sorted lexicographically for deterministic ordering.
-	var optional []string
-	for name := range props {
-		if !requiredSet[name] {
-			optional = append(optional, name)
-		}
-	}
-	sort.Strings(optional)
-
-	for _, name := range optional {
-		params = append(params, paramInfo{
-			Name:  name,
-			Types: extractPropertyTypes(props[name]),
-		})
-	}
-
-	return params
-}
-
-// extractPropertyTypes extracts the "type" field from a JSON Schema property.
-// Handles both string ("type": "string") and array ("type": ["string", "null"]) forms.
-func extractPropertyTypes(propSchema any) []string {
-	pm, ok := propSchema.(map[string]any)
-	if !ok {
-		return nil
-	}
-	switch t := pm["type"].(type) {
-	case string:
-		return []string{t}
-	case []any:
-		types := make([]string, 0, len(t))
-		for _, item := range t {
-			if s, ok := item.(string); ok {
-				types = append(types, s)
-			}
-		}
-		if len(types) == 0 {
-			return nil
-		}
-		return types
-	default:
-		return nil
-	}
+	return fns
 }
 
 // validateMontyValue checks that a Monty value matches the expected JSON Schema
 // types for a parameter. Returns nil if validation passes or types are unknown.
-func validateMontyValue(v monty.Value, param paramInfo) error {
+func validateMontyValue(v monty.Value, param mcpserver.ParamInfo) error {
 	if len(param.Types) == 0 {
 		return nil
 	}

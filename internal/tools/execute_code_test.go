@@ -5,10 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"skillful-mcp/internal/mcpserver"
+
 	monty "github.com/ewhauser/gomonty"
 )
 
 func TestExecuteCodeDescriptionRefersToUseSkill(t *testing.T) {
+	t.Parallel()
 	if !strings.Contains(executeCodeDescription, "use_skill") {
 		t.Error("description should refer to use_skill for tool discovery")
 	}
@@ -21,11 +24,12 @@ func TestExecuteCodeDescriptionRefersToUseSkill(t *testing.T) {
 }
 
 func TestExecuteCodeBasicMath(t *testing.T) {
+	t.Parallel()
 	runner, err := monty.New("40 + 2", monty.CompileOptions{ScriptName: "script.py"})
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}
-	value, err := runner.Run(context.Background(), monty.RunOptions{})
+	value, err := runner.Run(t.Context(), monty.RunOptions{})
 	if err != nil {
 		t.Fatalf("run error: %v", err)
 	}
@@ -35,11 +39,12 @@ func TestExecuteCodeBasicMath(t *testing.T) {
 }
 
 func TestExecuteCodeStringExpression(t *testing.T) {
+	t.Parallel()
 	runner, err := monty.New("'hello' + ' ' + 'world'", monty.CompileOptions{ScriptName: "script.py"})
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}
-	value, err := runner.Run(context.Background(), monty.RunOptions{})
+	value, err := runner.Run(t.Context(), monty.RunOptions{})
 	if err != nil {
 		t.Fatalf("run error: %v", err)
 	}
@@ -49,185 +54,75 @@ func TestExecuteCodeStringExpression(t *testing.T) {
 }
 
 func TestExecuteCodeSyntaxError(t *testing.T) {
+	t.Parallel()
 	_, err := monty.New("def (invalid syntax", monty.CompileOptions{ScriptName: "script.py"})
 	if err == nil {
 		t.Fatal("expected compile error for invalid syntax")
 	}
 }
 
-// --- extractParamSchema tests ---
-
-func TestExtractParamSchemaRequiredAndOptional(t *testing.T) {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"limit": map[string]any{"type": "integer"},
-			"sql":   map[string]any{"type": "string"},
-		},
-		"required": []any{"sql"},
-	}
-	params := extractParamSchema(schema)
-	if len(params) != 2 {
-		t.Fatalf("expected 2 params, got %d", len(params))
-	}
-	// Required first, then optional sorted.
-	if params[0].Name != "sql" || params[0].Types[0] != "string" {
-		t.Errorf("params[0] = %+v, want sql/string", params[0])
-	}
-	if params[1].Name != "limit" || params[1].Types[0] != "integer" {
-		t.Errorf("params[1] = %+v, want limit/integer", params[1])
-	}
-}
-
-func TestExtractParamSchemaNoRequired(t *testing.T) {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"gamma": map[string]any{"type": "string"},
-			"alpha": map[string]any{"type": "string"},
-			"beta":  map[string]any{"type": "number"},
-		},
-	}
-	params := extractParamSchema(schema)
-	if len(params) != 3 {
-		t.Fatalf("expected 3 params, got %d", len(params))
-	}
-	// All sorted lexicographically.
-	expected := []string{"alpha", "beta", "gamma"}
-	for i, name := range expected {
-		if params[i].Name != name {
-			t.Errorf("params[%d].Name = %q, want %q", i, params[i].Name, name)
-		}
-	}
-}
-
-func TestExtractParamSchemaRequiredWithNonRequiredSorted(t *testing.T) {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"z": map[string]any{"type": "string"},
-			"c": map[string]any{"type": "string"},
-			"a": map[string]any{"type": "string"},
-		},
-		"required": []any{"z"},
-	}
-	params := extractParamSchema(schema)
-	if len(params) != 3 {
-		t.Fatalf("expected 3 params, got %d", len(params))
-	}
-	// z first (required), then a, c (sorted).
-	expected := []string{"z", "a", "c"}
-	for i, name := range expected {
-		if params[i].Name != name {
-			t.Errorf("params[%d].Name = %q, want %q", i, params[i].Name, name)
-		}
-	}
-}
-
-func TestExtractParamSchemaNilSchema(t *testing.T) {
-	params := extractParamSchema(nil)
-	if params != nil {
-		t.Errorf("expected nil, got %v", params)
-	}
-}
-
-func TestExtractParamSchemaEmptyProperties(t *testing.T) {
-	schema := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
-	}
-	params := extractParamSchema(schema)
-	if len(params) != 0 {
-		t.Errorf("expected empty, got %v", params)
-	}
-}
-
-func TestExtractParamSchemaArrayType(t *testing.T) {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"value": map[string]any{"type": []any{"string", "null"}},
-		},
-	}
-	params := extractParamSchema(schema)
-	if len(params) != 1 {
-		t.Fatalf("expected 1 param, got %d", len(params))
-	}
-	if len(params[0].Types) != 2 || params[0].Types[0] != "string" || params[0].Types[1] != "null" {
-		t.Errorf("types = %v, want [string null]", params[0].Types)
-	}
-}
-
-func TestExtractParamSchemaNoTypeField(t *testing.T) {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"value": map[string]any{"description": "no type here"},
-		},
-	}
-	params := extractParamSchema(schema)
-	if len(params) != 1 {
-		t.Fatalf("expected 1 param, got %d", len(params))
-	}
-	if params[0].Types != nil {
-		t.Errorf("types = %v, want nil", params[0].Types)
-	}
-}
-
 // --- validateMontyValue tests ---
 
 func TestValidateMontyValueStringMatch(t *testing.T) {
-	err := validateMontyValue(monty.String("hello"), paramInfo{Name: "x", Types: []string{"string"}})
+	t.Parallel()
+	err := validateMontyValue(monty.String("hello"), mcpserver.ParamInfo{Name: "x", Types: []string{"string"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueIntegerMatch(t *testing.T) {
-	err := validateMontyValue(monty.Int(42), paramInfo{Name: "x", Types: []string{"integer"}})
+	t.Parallel()
+	err := validateMontyValue(monty.Int(42), mcpserver.ParamInfo{Name: "x", Types: []string{"integer"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueNumberAcceptsInt(t *testing.T) {
-	err := validateMontyValue(monty.Int(42), paramInfo{Name: "x", Types: []string{"number"}})
+	t.Parallel()
+	err := validateMontyValue(monty.Int(42), mcpserver.ParamInfo{Name: "x", Types: []string{"number"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueNumberAcceptsFloat(t *testing.T) {
-	err := validateMontyValue(monty.Float(3.14), paramInfo{Name: "x", Types: []string{"number"}})
+	t.Parallel()
+	err := validateMontyValue(monty.Float(3.14), mcpserver.ParamInfo{Name: "x", Types: []string{"number"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueBooleanMatch(t *testing.T) {
-	err := validateMontyValue(monty.Bool(true), paramInfo{Name: "x", Types: []string{"boolean"}})
+	t.Parallel()
+	err := validateMontyValue(monty.Bool(true), mcpserver.ParamInfo{Name: "x", Types: []string{"boolean"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueArrayMatch(t *testing.T) {
-	err := validateMontyValue(monty.List(monty.Int(1)), paramInfo{Name: "x", Types: []string{"array"}})
+	t.Parallel()
+	err := validateMontyValue(monty.List(monty.Int(1)), mcpserver.ParamInfo{Name: "x", Types: []string{"array"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueObjectMatch(t *testing.T) {
+	t.Parallel()
 	dict := monty.DictValue(monty.Dict{{Key: monty.String("k"), Value: monty.String("v")}})
-	err := validateMontyValue(dict, paramInfo{Name: "x", Types: []string{"object"}})
+	err := validateMontyValue(dict, mcpserver.ParamInfo{Name: "x", Types: []string{"object"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueTypeMismatch(t *testing.T) {
-	err := validateMontyValue(monty.Int(42), paramInfo{Name: "sql", Types: []string{"string"}})
+	t.Parallel()
+	err := validateMontyValue(monty.Int(42), mcpserver.ParamInfo{Name: "sql", Types: []string{"string"}})
 	if err == nil {
 		t.Fatal("expected error for type mismatch")
 	}
@@ -237,21 +132,23 @@ func TestValidateMontyValueTypeMismatch(t *testing.T) {
 }
 
 func TestValidateMontyValueNullableString(t *testing.T) {
+	t.Parallel()
 	// None should pass for ["string", "null"].
-	err := validateMontyValue(monty.None(), paramInfo{Name: "x", Types: []string{"string", "null"}})
+	err := validateMontyValue(monty.None(), mcpserver.ParamInfo{Name: "x", Types: []string{"string", "null"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 	// String should also pass.
-	err = validateMontyValue(monty.String("hi"), paramInfo{Name: "x", Types: []string{"string", "null"}})
+	err = validateMontyValue(monty.String("hi"), mcpserver.ParamInfo{Name: "x", Types: []string{"string", "null"}})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateMontyValueNoTypes(t *testing.T) {
+	t.Parallel()
 	// Nil types should skip validation.
-	err := validateMontyValue(monty.Int(42), paramInfo{Name: "x", Types: nil})
+	err := validateMontyValue(monty.Int(42), mcpserver.ParamInfo{Name: "x", Types: nil})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -260,9 +157,10 @@ func TestValidateMontyValueNoTypes(t *testing.T) {
 // --- Integration: type validation via Monty runner ---
 
 func TestExecuteCodeTypeValidation(t *testing.T) {
+	t.Parallel()
 	// Register a function with a string parameter schema, then call it with an int.
-	params := []paramInfo{{Name: "name", Types: []string{"string"}}}
-	paramByName := map[string]paramInfo{"name": params[0]}
+	params := []mcpserver.ParamInfo{{Name: "name", Types: []string{"string"}}}
+	paramByName := map[string]mcpserver.ParamInfo{"name": params[0]}
 
 	fn := func(fnCtx context.Context, call monty.Call) (monty.Result, error) {
 		args := make(map[string]any)
@@ -297,7 +195,7 @@ func TestExecuteCodeTypeValidation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		value, err := runner.Run(context.Background(), monty.RunOptions{
+		value, err := runner.Run(t.Context(), monty.RunOptions{
 			Functions: map[string]monty.ExternalFunction{"greet": fn},
 		})
 		if err != nil {
@@ -314,7 +212,7 @@ func TestExecuteCodeTypeValidation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = runner.Run(context.Background(), monty.RunOptions{
+		_, err = runner.Run(t.Context(), monty.RunOptions{
 			Functions: map[string]monty.ExternalFunction{"greet": fn},
 		})
 		if err == nil {

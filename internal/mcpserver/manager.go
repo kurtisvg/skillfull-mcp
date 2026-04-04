@@ -6,10 +6,13 @@ import (
 	"log/slog"
 
 	"skillful-mcp/internal/config"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type Manager struct {
 	servers map[string]*Server
+	tools   []Tool
 }
 
 // NewManager creates a Manager by connecting to all servers in the config.
@@ -27,12 +30,60 @@ func NewManager(ctx context.Context, cfgs map[string]config.Server) (*Manager, e
 		slog.Info("connected to server", "skill", name)
 	}
 
+	tools, err := resolveTools(m.servers)
+	if err != nil {
+		m.Close()
+		return nil, err
+	}
+	m.tools = tools
 	return m, nil
 }
 
 // NewManagerFromServers creates a Manager from pre-built Servers (useful for testing).
-func NewManagerFromServers(servers map[string]*Server) *Manager {
-	return &Manager{servers: servers}
+func NewManagerFromServers(servers map[string]*Server) (*Manager, error) {
+	m := &Manager{servers: servers}
+	tools, err := resolveTools(m.servers)
+	if err != nil {
+		return nil, err
+	}
+	m.tools = tools
+	return m, nil
+}
+
+// resolveTools resolves tool names across all servers, prefixing with
+// server name only when multiple servers define a tool with the same name.
+func resolveTools(servers map[string]*Server) ([]Tool, error) {
+	type entry struct {
+		serverName string
+		tool       *mcp.Tool
+	}
+
+	byName := make(map[string][]entry)
+	for name, srv := range servers {
+		for _, tool := range srv.tools {
+			byName[tool.Name] = append(byName[tool.Name], entry{name, tool})
+		}
+	}
+
+	var resolved []Tool
+	for name, entries := range byName {
+		if len(entries) == 1 {
+			t, err := newTool(name, name, entries[0].serverName, entries[0].tool)
+			if err != nil {
+				return nil, err
+			}
+			resolved = append(resolved, t)
+		} else {
+			for _, e := range entries {
+				t, err := newTool(e.serverName+"_"+name, name, e.serverName, e.tool)
+				if err != nil {
+					return nil, err
+				}
+				resolved = append(resolved, t)
+			}
+		}
+	}
+	return resolved, nil
 }
 
 func (m *Manager) GetServer(name string) (*Server, error) {
@@ -49,6 +100,20 @@ func (m *Manager) ListServerNames() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+func (m *Manager) AllTools() []Tool {
+	return m.tools
+}
+
+func (m *Manager) ServerTools(name string) []Tool {
+	var tools []Tool
+	for _, t := range m.tools {
+		if t.SkillName == name {
+			tools = append(tools, t)
+		}
+	}
+	return tools
 }
 
 func (m *Manager) Close() {

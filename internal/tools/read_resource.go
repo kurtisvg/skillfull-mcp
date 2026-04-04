@@ -18,14 +18,14 @@ func RegisterReadResource(s *mcp.Server, mgr *mcpserver.Manager) {
 		Name:        "read_resource",
 		Description: "Read a resource from a specific skill",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input readResourceInput) (*mcp.CallToolResult, any, error) {
-		session, err := mgr.GetServer(input.SkillName)
+		srv, err := mgr.GetServer(input.SkillName)
 		if err != nil {
 			result := &mcp.CallToolResult{}
 			result.SetError(err)
 			return result, nil, nil
 		}
 
-		readResult, err := session.ReadResource(ctx, &mcp.ReadResourceParams{
+		readResult, err := srv.ReadResource(ctx, &mcp.ReadResourceParams{
 			URI: input.ResourceURI,
 		})
 		if err != nil {

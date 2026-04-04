@@ -37,30 +37,14 @@ func startFakeServer(t *testing.T, ctx context.Context, toolName string, opts ..
 	return session
 }
 
-func TestServerListTools(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-
-	s := NewServerFromSession(startFakeServer(t, ctx, "my_test_tool"))
-	defer s.Close()
-
-	result, err := s.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatalf("ListTools error: %v", err)
-	}
-	if len(result.Tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(result.Tools))
-	}
-	if result.Tools[0].Name != "my_test_tool" {
-		t.Errorf("tool name = %q, want %q", result.Tools[0].Name, "my_test_tool")
-	}
-}
-
 func TestServerCallTool(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	s := NewServerFromSession(startFakeServer(t, ctx, "echo"))
+	s, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "echo"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer s.Close()
 
 	result, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "echo"})
@@ -96,7 +80,10 @@ func TestServerListResources(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := NewServerFromSession(session)
+	s, err := NewServerFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer s.Close()
 
 	result, err := s.ListResources(ctx, nil)
@@ -128,7 +115,10 @@ func TestServerReadResource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := NewServerFromSession(session)
+	s, err := NewServerFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer s.Close()
 
 	result, err := s.ReadResource(ctx, &mcp.ReadResourceParams{URI: "test://r"})
@@ -146,10 +136,12 @@ func TestServerInstructions(t *testing.T) {
 
 	t.Run("with instructions", func(t *testing.T) {
 		t.Parallel()
-		session := startFakeServer(t, ctx, "tool", &mcp.ServerOptions{
+		s, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool", &mcp.ServerOptions{
 			Instructions: "Use this server for testing",
-		})
-		s := NewServerFromSession(session)
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer s.Close()
 
 		if s.Instructions() != "Use this server for testing" {
@@ -159,8 +151,10 @@ func TestServerInstructions(t *testing.T) {
 
 	t.Run("without instructions", func(t *testing.T) {
 		t.Parallel()
-		session := startFakeServer(t, ctx, "tool")
-		s := NewServerFromSession(session)
+		s, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool"))
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer s.Close()
 
 		if s.Instructions() != "" {
