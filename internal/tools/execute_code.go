@@ -25,10 +25,18 @@ Positional and keyword arguments are both supported.
 IMPORTANT: Only call tools that were returned by use_skill or described in resources. Do not guess tool names or schemas — first call use_skill to discover the available tools and their input schemas for a given skill, then write code that calls those tools.`
 
 func RegisterExecuteCode(s *mcp.Server, mgr *mcpserver.Manager) {
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "execute_code",
-		Description: executeCodeDescription,
-	}, func(ctx context.Context, req *mcp.CallToolRequest, input executeCodeInput) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(
+		s,
+		&mcp.Tool{
+			Name:        "execute_code",
+			Description: executeCodeDescription,
+		},
+		newExecuteCode(mgr),
+	)
+}
+
+func newExecuteCode(mgr *mcpserver.Manager) func(context.Context, *mcp.CallToolRequest, executeCodeInput) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, input executeCodeInput) (*mcp.CallToolResult, any, error) {
 		if input.Code == "" {
 			result := &mcp.CallToolResult{}
 			result.SetError(fmt.Errorf("code must not be empty"))
@@ -42,7 +50,15 @@ func RegisterExecuteCode(s *mcp.Server, mgr *mcpserver.Manager) {
 			return result, nil, nil
 		}
 
-		fns := buildToolFunctions(mgr)
+		tools := mgr.AllTools()
+		fns := make(map[string]monty.ExternalFunction, len(tools))
+		for _, t := range tools {
+			srv, err := mgr.GetServer(t.ServerName)
+			if err != nil {
+				continue
+			}
+			fns[t.ResolvedName] = buildTool(t, srv)
+		}
 
 		value, err := runner.Run(ctx, monty.RunOptions{
 			Functions: fns,
@@ -56,71 +72,60 @@ func RegisterExecuteCode(s *mcp.Server, mgr *mcpserver.Manager) {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: value.String()}},
 		}, nil, nil
-	})
+	}
 }
 
-// buildToolFunctions creates a Monty external function for each downstream tool,
-// using resolved names (prefixed only on conflict).
-func buildToolFunctions(mgr *mcpserver.Manager) map[string]monty.ExternalFunction {
-	tools := mgr.AllTools()
-	fns := make(map[string]monty.ExternalFunction, len(tools))
-	for _, t := range tools {
-		srv, err := mgr.GetServer(t.ServerName)
-		if err != nil {
-			continue
-		}
-		paramByName := make(map[string]mcpserver.ParamInfo, len(t.Params))
-		for _, p := range t.Params {
-			paramByName[p.Name] = p
-		}
-
-		fns[t.ResolvedName] = func(fnCtx context.Context, call monty.Call) (monty.Result, error) {
-			args := make(map[string]any)
-
-			// Map positional args to parameter names from the schema, with type validation.
-			for i, val := range call.Args {
-				if i < len(t.Params) {
-					if err := validateMontyValue(val, t.Params[i]); err != nil {
-						msg := err.Error()
-						return monty.Raise(monty.Exception{Type: "TypeError", Arg: &msg}), nil
-					}
-					args[t.Params[i].Name] = montyValueToAny(val)
-				}
-			}
-
-			// Keyword args override positional, with type validation.
-			for _, pair := range call.Kwargs {
-				key, ok := pair.Key.Raw().(string)
-				if !ok {
-					continue
-				}
-				if pi, ok := paramByName[key]; ok {
-					if err := validateMontyValue(pair.Value, pi); err != nil {
-						msg := err.Error()
-						return monty.Raise(monty.Exception{Type: "TypeError", Arg: &msg}), nil
-					}
-				}
-				args[key] = montyValueToAny(pair.Value)
-			}
-
-			toolResult, err := srv.CallTool(fnCtx, &mcp.CallToolParams{
-				Name:      t.OriginalName,
-				Arguments: args,
-			})
-			if err != nil {
-				return monty.Return(monty.String(fmt.Sprintf("error: %v", err))), nil
-			}
-
-			if toolResult.IsError {
-				text := extractErrorText(toolResult)
-				return monty.Return(monty.String(fmt.Sprintf("error: %s", text))), nil
-			}
-
-			return monty.Return(extractResult(toolResult)), nil
-		}
+// buildTool creates a Monty external function for a single downstream tool.
+func buildTool(t mcpserver.Tool, srv *mcpserver.Server) monty.ExternalFunction {
+	paramByName := make(map[string]mcpserver.ParamInfo, len(t.Params))
+	for _, p := range t.Params {
+		paramByName[p.Name] = p
 	}
 
-	return fns
+	return func(fnCtx context.Context, call monty.Call) (monty.Result, error) {
+		args := make(map[string]any)
+
+		// Map positional args to parameter names from the schema, with type validation.
+		for i, val := range call.Args {
+			if i < len(t.Params) {
+				if err := validateMontyValue(val, t.Params[i]); err != nil {
+					msg := err.Error()
+					return monty.Raise(monty.Exception{Type: "TypeError", Arg: &msg}), nil
+				}
+				args[t.Params[i].Name] = montyValueToAny(val)
+			}
+		}
+
+		// Keyword args override positional, with type validation.
+		for _, pair := range call.Kwargs {
+			key, ok := pair.Key.Raw().(string)
+			if !ok {
+				continue
+			}
+			if pi, ok := paramByName[key]; ok {
+				if err := validateMontyValue(pair.Value, pi); err != nil {
+					msg := err.Error()
+					return monty.Raise(monty.Exception{Type: "TypeError", Arg: &msg}), nil
+				}
+			}
+			args[key] = montyValueToAny(pair.Value)
+		}
+
+		toolResult, err := srv.CallTool(fnCtx, &mcp.CallToolParams{
+			Name:      t.OriginalName,
+			Arguments: args,
+		})
+		if err != nil {
+			return monty.Return(monty.String(fmt.Sprintf("error: %v", err))), nil
+		}
+
+		if toolResult.IsError {
+			text := extractText(toolResult)
+			return monty.Return(monty.String(fmt.Sprintf("error: %s", text))), nil
+		}
+
+		return monty.Return(extractResult(toolResult)), nil
+	}
 }
 
 // validateMontyValue checks that a Monty value matches the expected JSON Schema
@@ -249,8 +254,8 @@ func anyToMonty(v any) monty.Value {
 	}
 }
 
-// extractErrorText pulls the first text content from a CallToolResult for error messages.
-func extractErrorText(result *mcp.CallToolResult) string {
+// extractText pulls the first text content from a CallToolResult.
+func extractText(result *mcp.CallToolResult) string {
 	for _, c := range result.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
 			return tc.Text
@@ -265,5 +270,5 @@ func extractResult(result *mcp.CallToolResult) monty.Value {
 	if result.StructuredContent != nil {
 		return anyToMonty(result.StructuredContent)
 	}
-	return monty.String(extractErrorText(result))
+	return monty.String(extractText(result))
 }

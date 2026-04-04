@@ -73,17 +73,62 @@ func TestValidateMontyValue(t *testing.T) {
 		param   mcpserver.ParamInfo
 		wantErr bool
 	}{
-		{"string_match", monty.String("hello"), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "string"}}, false},
-		{"integer_match", monty.Int(42), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "integer"}}, false},
-		{"number_accepts_int", monty.Int(42), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "number"}}, false},
-		{"number_accepts_float", monty.Float(3.14), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "number"}}, false},
-		{"boolean_match", monty.Bool(true), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "boolean"}}, false},
-		{"array_match", monty.List(monty.Int(1)), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "array"}}, false},
-		{"object_match", monty.DictValue(monty.Dict{{Key: monty.String("k"), Value: monty.String("v")}}), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "object"}}, false},
-		{"type_mismatch", monty.Int(42), mcpserver.ParamInfo{Name: "sql", Schema: map[string]any{"type": "string"}}, true},
-		{"nullable_none", monty.None(), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": []any{"string", "null"}}}, false},
-		{"nullable_string", monty.String("hi"), mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": []any{"string", "null"}}}, false},
-		{"no_schema", monty.Int(42), mcpserver.ParamInfo{Name: "x"}, false},
+		{
+			name:  "string_match",
+			value: monty.String("hello"),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "string"}},
+		},
+		{
+			name:  "integer_match",
+			value: monty.Int(42),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "integer"}},
+		},
+		{
+			name:  "number_accepts_int",
+			value: monty.Int(42),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "number"}},
+		},
+		{
+			name:  "number_accepts_float",
+			value: monty.Float(3.14),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "number"}},
+		},
+		{
+			name:  "boolean_match",
+			value: monty.Bool(true),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "boolean"}},
+		},
+		{
+			name:  "array_match",
+			value: monty.List(monty.Int(1)),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "array"}},
+		},
+		{
+			name:  "object_match",
+			value: monty.DictValue(monty.Dict{{Key: monty.String("k"), Value: monty.String("v")}}),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": "object"}},
+		},
+		{
+			name:    "type_mismatch",
+			value:   monty.Int(42),
+			param:   mcpserver.ParamInfo{Name: "sql", Schema: map[string]any{"type": "string"}},
+			wantErr: true,
+		},
+		{
+			name:  "nullable_none",
+			value: monty.None(),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": []any{"string", "null"}}},
+		},
+		{
+			name:  "nullable_string",
+			value: monty.String("hi"),
+			param: mcpserver.ParamInfo{Name: "x", Schema: map[string]any{"type": []any{"string", "null"}}},
+		},
+		{
+			name:  "no_schema",
+			value: monty.Int(42),
+			param: mcpserver.ParamInfo{Name: "x"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -146,7 +191,15 @@ func TestExecuteCodeTypeValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fns := buildToolFunctions(mgr)
+	tools := mgr.AllTools()
+	fns := make(map[string]monty.ExternalFunction, len(tools))
+	for _, tool := range tools {
+		srv, err := mgr.GetServer(tool.ServerName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fns[tool.ResolvedName] = buildTool(tool, srv)
+	}
 
 	t.Run("valid_string_arg", func(t *testing.T) {
 		t.Parallel()
@@ -179,87 +232,68 @@ func TestExecuteCodeTypeValidation(t *testing.T) {
 	})
 }
 
-// --- extractResult / contentToMonty tests ---
+// --- extractResult tests ---
 
-func TestExtractResultTextContent(t *testing.T) {
+func TestExtractResult(t *testing.T) {
 	t.Parallel()
-	result := &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: "hello"}},
-	}
-	got := extractResult(result)
-	if got.String() != "hello" {
-		t.Errorf("got %q, want %q", got.String(), "hello")
-	}
-}
 
-func TestExtractResultStructuredContent(t *testing.T) {
-	t.Parallel()
-	result := &mcp.CallToolResult{
-		Content:           []mcp.Content{&mcp.TextContent{Text: `{"temp": 22}`}},
-		StructuredContent: map[string]any{"temp": float64(22)},
+	tests := []struct {
+		name     string
+		result   *mcp.CallToolResult
+		wantKind monty.ValueKind
+	}{
+		{
+			name:     "text_content",
+			result:   &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "hello"}}},
+			wantKind: "string",
+		},
+		{
+			name: "structured_content_preferred",
+			result: &mcp.CallToolResult{
+				Content:           []mcp.Content{&mcp.TextContent{Text: `{"temp": 22}`}},
+				StructuredContent: map[string]any{"temp": float64(22)},
+			},
+			wantKind: "dict",
+		},
 	}
-	got := extractResult(result)
-	// Should prefer structured content over text.
-	if got.Kind() != "dict" {
-		t.Fatalf("expected dict, got %s", got.Kind())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := extractResult(tt.result)
+			if got.Kind() != tt.wantKind {
+				t.Errorf("Kind() = %s, want %s", got.Kind(), tt.wantKind)
+			}
+		})
 	}
 }
 
 // --- anyToMonty tests ---
 
-func TestAnyToMontyString(t *testing.T) {
+func TestAnyToMonty(t *testing.T) {
 	t.Parallel()
-	got := anyToMonty("hello")
-	if got.String() != "hello" {
-		t.Errorf("got %q, want %q", got.String(), "hello")
-	}
-}
 
-func TestAnyToMontyFloat(t *testing.T) {
-	t.Parallel()
-	got := anyToMonty(3.14)
-	if got.Kind() != "float" {
-		t.Errorf("expected float, got %s", got.Kind())
+	tests := []struct {
+		name     string
+		input    any
+		wantKind monty.ValueKind
+	}{
+		{name: "string", input: "hello", wantKind: "string"},
+		{name: "float", input: 3.14, wantKind: "float"},
+		{name: "int_from_float", input: float64(42), wantKind: "int"},
+		{name: "bool", input: true, wantKind: "bool"},
+		{name: "nil", input: nil, wantKind: "none"},
+		{name: "map", input: map[string]any{"key": "val"}, wantKind: "dict"},
+		{name: "slice", input: []any{"a", "b"}, wantKind: "list"},
 	}
-}
 
-func TestAnyToMontyIntFromFloat(t *testing.T) {
-	t.Parallel()
-	// JSON numbers without decimals unmarshal as float64 but represent ints.
-	got := anyToMonty(float64(42))
-	if got.Kind() != "int" {
-		t.Errorf("expected int for whole number, got %s", got.Kind())
-	}
-}
-
-func TestAnyToMontyBool(t *testing.T) {
-	t.Parallel()
-	got := anyToMonty(true)
-	if got.Kind() != "bool" {
-		t.Errorf("expected bool, got %s", got.Kind())
-	}
-}
-
-func TestAnyToMontyNil(t *testing.T) {
-	t.Parallel()
-	got := anyToMonty(nil)
-	if got.Kind() != "none" {
-		t.Errorf("expected none, got %s", got.Kind())
-	}
-}
-
-func TestAnyToMontyMap(t *testing.T) {
-	t.Parallel()
-	got := anyToMonty(map[string]any{"key": "val"})
-	if got.Kind() != "dict" {
-		t.Errorf("expected dict, got %s", got.Kind())
-	}
-}
-
-func TestAnyToMontySlice(t *testing.T) {
-	t.Parallel()
-	got := anyToMonty([]any{"a", "b"})
-	if got.Kind() != "list" {
-		t.Errorf("expected list, got %s", got.Kind())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := anyToMonty(tt.input)
+			if got.Kind() != tt.wantKind {
+				t.Errorf("Kind() = %s, want %s", got.Kind(), tt.wantKind)
+			}
+		})
 	}
 }
