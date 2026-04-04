@@ -21,7 +21,6 @@ Sounds like a Skill Issue 😉
 - [How it works](#how-it-works)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
-- [Contributing](#contributing)
 
 ## Why? 
 
@@ -101,12 +100,15 @@ Create an `mcp.json` file with your downstream servers:
 ```json
 {
   "mcpServers": {
-    "database": {
+    "postgres": {
       "command": "npx",
       "args": ["-y", "@toolbox-sdk/server", "--prebuilt=postgres"],
       "description": "Postgres database tools — query, inspect schemas, and manage tables. Use when the user needs to read or write data, explore table structures, or run SQL.",
       "env": {
-        "TOOLBOX_POSTGRES_CONNSTRING": "${DATABASE_URL}"
+        "POSTGRES_HOST": "${POSTGRES_HOST}",
+        "POSTGRES_USER": "${POSTGRES_USER}",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD}",
+        "POSTGRES_DATABASE": "${POSTGRES_DATABASE}"
       }
     },
     "github-issues": {
@@ -142,7 +144,7 @@ skillful-mcp --config mcp.json --transport http --port 8080
 {
   "mcpServers": {
     "skillful": {
-      "command": "skillful-mcp",
+      "command": "/path/to/skillful-mcp",
       "args": ["--config", "/path/to/mcp.json"]
     }
   }
@@ -157,7 +159,7 @@ skillful-mcp --config mcp.json --transport http --port 8080
 {
   "mcpServers": {
     "skillful": {
-      "command": "skillful-mcp",
+      "command": "/path/to/skillful-mcp",
       "args": ["--config", "/path/to/mcp.json"]
     }
   }
@@ -170,7 +172,7 @@ skillful-mcp --config mcp.json --transport http --port 8080
 
 ```toml
 [mcp_servers.skillful]
-command = "skillful-mcp"
+command = "/path/to/skillful-mcp"
 args = ["--config", "/path/to/mcp.json"]
 ```
 </details>
@@ -181,7 +183,9 @@ Any MCP-compatible client works — just point it at the `skillful-mcp` binary.
 
 The [GitHub MCP server](https://github.com/github/github-mcp-server) exposes
 19+ toolsets — a perfect candidate for skill decomposition. Instead of one
-massive server, split it into focused skills by feature group:
+massive server, split it into focused skills by feature group. The agent sees
+4 skills instead of 40+ tools, and calls `use_skill` only when it needs a
+specific capability.
 
 ```json
 {
@@ -222,9 +226,6 @@ massive server, split it into focused skills by feature group:
 }
 ```
 
-The agent sees three skills instead of 40+ tools. It calls `use_skill` only
-when it needs a specific capability, keeping the context window lean.
-
 ## Configuration
 
 Each entry in `mcpServers` is a downstream server that becomes a skill. The key
@@ -257,12 +258,15 @@ are passed to the child — the parent environment is not inherited.
 ```json
 {
   "mcpServers": {
-    "database": {
+    "postgres": {
       "command": "npx",
       "args": ["-y", "@toolbox-sdk/server", "--prebuilt=postgres"],
       "description": "Postgres database tools — query, inspect schemas, and manage tables. Use when the user needs to read or write data, explore table structures, or run SQL.",
       "env": {
-        "TOOLBOX_POSTGRES_CONNSTRING": "${DATABASE_URL}"
+        "POSTGRES_HOST": "${POSTGRES_HOST}",
+        "POSTGRES_USER": "${POSTGRES_USER}",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD}",
+        "POSTGRES_DATABASE": "${POSTGRES_DATABASE}"
       }
     }
   }
@@ -312,12 +316,3 @@ Connects via Server-Sent Events.
 | `--host`        | `localhost`  | HTTP listen host                      |
 | `--port`        | `8080`       | HTTP listen port                      |
 | `--version`     |              | Print version and exit                |
-
-## Contributing
-
-```sh
-go test ./...
-```
-
-Issues and pull requests are welcome on
-[GitHub](https://github.com/kurtisvg/skillful-mcp/issues).
