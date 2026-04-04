@@ -388,11 +388,11 @@ func TestResolveToolsNoConflict(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool_a"))
+	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"tool_a"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "tool_b"))
+	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"tool_b"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,11 +415,11 @@ func TestResolveToolsWithConflict(t *testing.T) {
 	ctx := t.Context()
 
 	// Both servers have a tool named "my_test_tool".
-	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "my_test_tool"))
+	s1, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"my_test_tool"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, "my_test_tool"))
+	s2, err := NewServerFromSession(ctx, startFakeServer(t, ctx, []string{"my_test_tool"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
