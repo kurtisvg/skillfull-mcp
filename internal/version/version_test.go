@@ -1,29 +1,19 @@
 package version
 
 import (
-	"regexp"
+	"os"
+	"strings"
 	"testing"
 )
 
-func TestVersionIsValidSemver(t *testing.T) {
+func TestVersionMatchesFile(t *testing.T) {
 	t.Parallel()
-	if Version == "" {
-		t.Fatal("Version is empty")
-	}
-	matched, err := regexp.MatchString(`^\d+\.\d+\.\d+$`, Version)
+	data, err := os.ReadFile("version.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !matched {
-		t.Errorf("Version = %q, want semver format (X.Y.Z)", Version)
-	}
-}
-
-func TestVersionHasNoWhitespace(t *testing.T) {
-	t.Parallel()
-	for _, c := range Version {
-		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-			t.Fatalf("Version contains whitespace: %q", Version)
-		}
+	want := strings.TrimSpace(string(data))
+	if Version != want {
+		t.Errorf("Version = %q, want %q (from version.txt)", Version, want)
 	}
 }
