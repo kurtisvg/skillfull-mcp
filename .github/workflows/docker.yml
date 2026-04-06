@@ -7,7 +7,6 @@ on:
   pull_request:
     branches: [main]
     paths: [Dockerfile]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,13 +25,6 @@ jobs:
           tags: skillful-mcp:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Inspect image
-        run: |
-          docker image inspect skillful-mcp:test --format 'arch={{.Architecture}} os={{.Os}}'
-          docker create --name test-inspect skillful-mcp:test || true
-          docker cp test-inspect:/bin/skillful-mcp /tmp/skillful-mcp || true
-          file /tmp/skillful-mcp || true
-          docker rm test-inspect || true
       - name: Verify container runs
         run: |
           output=$(docker run --rm skillful-mcp:test --version 2>&1 || true)
