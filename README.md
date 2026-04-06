@@ -145,7 +145,7 @@ Create an `mcp.json` file with your downstream servers:
     },
     "github-issues": {
       "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/",
+      "url": "https://api.githubcopilot.com/mcp/x/issues",
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
@@ -224,7 +224,7 @@ specific capability.
   "mcpServers": {
     "github-issues": {
       "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/",
+      "url": "https://api.githubcopilot.com/mcp/x/issues",
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
@@ -232,7 +232,7 @@ specific capability.
     },
     "github-labels": {
       "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/",
+      "url": "https://api.githubcopilot.com/mcp/x/labels",
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
@@ -240,7 +240,7 @@ specific capability.
     },
     "github-prs": {
       "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/",
+      "url": "https://api.githubcopilot.com/mcp/x/pull_requests",
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
@@ -248,7 +248,7 @@ specific capability.
     },
     "github-actions": {
       "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/",
+      "url": "https://api.githubcopilot.com/mcp/x/actions",
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       },
