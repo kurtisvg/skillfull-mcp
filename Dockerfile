@@ -4,7 +4,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /bin/skillful-mcp .
+ENV CGO_ENABLED=0
+RUN go build -o /bin/skillful-mcp .
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /bin/skillful-mcp /bin/skillful-mcp
