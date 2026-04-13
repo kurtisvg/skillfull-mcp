@@ -36,7 +36,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.26.1"
       - name: Build
         run: go build ./...
       - name: Test
@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.26.1"
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
