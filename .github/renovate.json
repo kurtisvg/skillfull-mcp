@@ -16,11 +16,12 @@
   "packageRules": [
     {
       "matchDepNames": ["go", "golang"],
-      "groupName": "go version"
+      "groupName": "go version",
+      "rangeStrategy": "bump"
     },
     {
       "matchManagers": ["gomod"],
-      "excludeDepNames": ["go"],
+      "matchDepNames": ["!go"],
       "groupName": "go dependencies"
     },
     {
