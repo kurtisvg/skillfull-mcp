@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/kurtisvg/skillful-mcp/compare/v0.1.0...v0.1.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* update all GitHub Actions to latest major versions ([#31](https://github.com/kurtisvg/skillful-mcp/issues/31)) ([7d0d77b](https://github.com/kurtisvg/skillful-mcp/commit/7d0d77b2cb0ff96b69797510dfbcca9de6b4362a))
+
 ## [0.1.0](https://github.com/kurtisvg/skillful-mcp/compare/v0.0.1...v0.1.0) (2026-04-06)
 
 
